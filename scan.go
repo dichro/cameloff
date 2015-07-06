@@ -29,7 +29,7 @@ type FetcherEnumerator struct {
 	hit1, hit2, miss int
 }
 
-const cacheSize = 4000
+const cacheSize = 1000
 
 func (f *FetcherEnumerator) Add(b *blob.Blob) {
 	f.mu.Lock()
@@ -111,16 +111,24 @@ func main() {
 				delta := now.Sub(t).Seconds()
 				t = now
 				fe.mu.Lock()
-				fmt.Printf("%6d (%4.0f/sec) blobs %10d bytes %6d/%-6d hit %6d miss\n",
+				fmt.Printf("%8d (%4.0f/sec) blobs %12d bytes %8d/%-8d hit %8d miss\n",
 					blobs, 1000.0/delta, bytes, fe.hit1, fe.hit2, fe.miss)
 				fe.mu.Unlock()
 			}
+			start := time.Now()
 			r := b.Open()
 			_, err := dst.ReceiveBlob(b.Ref(), r)
 			if err != nil {
 				log.Print(err)
 			}
 			r.Close()
+			if elapsed := time.Now().Sub(start); elapsed > time.Second {
+				fmt.Printf("elapsed %s to index sha1-%s at '%s'\n",
+					elapsed, b.Ref().Digest(), token)
+				// pull some data out of the index to
+				// describe blob? print continuation
+				// token for easier restart?
+			}
 		}
 		fmt.Println("last token", token)
 	}()
