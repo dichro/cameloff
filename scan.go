@@ -27,13 +27,12 @@ type FetcherEnumerator struct {
 	mu               sync.Mutex
 	c1, c2           map[string]*blob.Blob
 	hit1, hit2, miss int
+	blobs, bytes     int64
 }
 
-const cacheSize = 1000
+const cacheSize = 4000
 
 func (f *FetcherEnumerator) Add(b *blob.Blob) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
 	f.c1[b.Ref().Digest()] = b
 	if len(f.c1) >= cacheSize {
 		f.c2 = f.c1
@@ -41,20 +40,67 @@ func (f *FetcherEnumerator) Add(b *blob.Blob) {
 	}
 }
 
-func (f *FetcherEnumerator) Fetch(ref blob.Ref) (io.ReadCloser, uint32, error) {
+func (f *FetcherEnumerator) CacheFetch(ref blob.Ref) *blob.Blob {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	d := ref.Digest()
 	if b, ok := f.c1[d]; ok {
 		f.hit1++
-		return b.Open(), b.Size(), nil
+		return b
 	}
 	if b, ok := f.c2[d]; ok {
 		f.hit2++
-		return b.Open(), b.Size(), nil
+		return b
 	}
 	f.miss++
+	return nil
+}
+
+func (f *FetcherEnumerator) Fetch(ref blob.Ref) (io.ReadCloser, uint32, error) {
+	if b := f.CacheFetch(ref); b != nil {
+		return b.Open(), b.Size(), nil
+	}
 	return f.FetcherEnumerator.Fetch(ref)
+}
+
+func (f *FetcherEnumerator) Index(ch chan blobserver.BlobAndToken, dst *index.Index) {
+	t := time.Now()
+	for b := range ch {
+		valid := b.ValidContents()
+
+		f.mu.Lock()
+		if valid {
+			b := b
+			f.Add(b.Blob)
+		}
+		f.blobs++
+		f.bytes += int64(b.Size())
+		blobs, bytes := f.blobs, f.bytes
+		hit1, hit2, miss := f.hit1, f.hit2, f.miss
+		f.mu.Unlock()
+
+		if blobs%1000 == 0 {
+			now := time.Now()
+			delta := now.Sub(t).Seconds()
+			t = now
+			fmt.Printf("%8d (%4.0f/sec) blobs %12d bytes %8d/%-8d hit %8d miss\n",
+				blobs, 1000.0/delta, bytes, hit1, hit2, miss)
+		}
+		start := time.Now()
+		r := b.Open()
+		_, err := dst.ReceiveBlob(b.Ref(), r)
+		if err != nil {
+			log.Print(err)
+		}
+		r.Close()
+		if elapsed := time.Now().Sub(start); elapsed > time.Second {
+			fmt.Printf("elapsed %s to index sha1-%s at '%s'\n",
+				elapsed, b.Ref().Digest(), b.Token)
+			// pull some data out of the index to
+			// describe blob? print continuation
+			// token for easier restart?
+		}
+	}
 }
 
 func main() {
@@ -90,51 +136,10 @@ func main() {
 	dst.InitBlobSource(&fe)
 
 	ch := make(chan blobserver.BlobAndToken)
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		var blobs, bytes int64
-		var token string
-
-		t := time.Now()
-		for b := range ch {
-			token = b.Token
-			if b.ValidContents() {
-				b := b
-				fe.Add(b.Blob)
-			}
-			blobs++
-			bytes += int64(b.Size())
-			if blobs%1000 == 0 {
-				now := time.Now()
-				delta := now.Sub(t).Seconds()
-				t = now
-				fe.mu.Lock()
-				fmt.Printf("%8d (%4.0f/sec) blobs %12d bytes %8d/%-8d hit %8d miss\n",
-					blobs, 1000.0/delta, bytes, fe.hit1, fe.hit2, fe.miss)
-				fe.mu.Unlock()
-			}
-			start := time.Now()
-			r := b.Open()
-			_, err := dst.ReceiveBlob(b.Ref(), r)
-			if err != nil {
-				log.Print(err)
-			}
-			r.Close()
-			if elapsed := time.Now().Sub(start); elapsed > time.Second {
-				fmt.Printf("elapsed %s to index sha1-%s at '%s'\n",
-					elapsed, b.Ref().Digest(), token)
-				// pull some data out of the index to
-				// describe blob? print continuation
-				// token for easier restart?
-			}
-		}
-		fmt.Println("last token", token)
-	}()
+	go fe.Index(ch, dst)
+	go fe.Index(ch, dst)
 	ctx := context.New()
 	if err := src.StreamBlobs(ctx, ch, ""); err != nil {
-		wg.Wait()
 		log.Fatal(err)
 	}
 }
