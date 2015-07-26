@@ -25,11 +25,11 @@ type FetcherEnumerator struct {
 	blobserver.FetcherEnumerator
 	start time.Time
 
-	mu               sync.Mutex
-	c1, c2           map[string]*blob.Blob
-	hit1, hit2, miss int
-	blobs, bytes     int64
-	updated          time.Time
+	mu           sync.Mutex
+	c1, c2       map[string]*blob.Blob
+	hit, miss    int
+	blobs, bytes int64
+	updated      time.Time
 }
 
 const cacheSize = 4000
@@ -47,11 +47,11 @@ func (f *FetcherEnumerator) CacheFetch(ref blob.Ref) *blob.Blob {
 	defer f.mu.Unlock()
 	d := ref.Digest()
 	if b, ok := f.c1[d]; ok {
-		f.hit1++
+		f.hit++
 		return b
 	}
 	if b, ok := f.c2[d]; ok {
-		f.hit2++
+		f.hit++
 		return b
 	}
 	f.miss++
@@ -77,7 +77,7 @@ func (f *FetcherEnumerator) Index(ch chan blobserver.BlobAndToken, dst *index.In
 		f.blobs++
 		f.bytes += int64(b.Size())
 		blobs, bytes := f.blobs, f.bytes
-		hit1, hit2, miss := f.hit1, f.hit2, f.miss
+		hit, miss := f.hit, f.miss
 
 		now := time.Now()
 		updated := now.Sub(f.updated) > 10*time.Second
@@ -88,8 +88,8 @@ func (f *FetcherEnumerator) Index(ch chan blobserver.BlobAndToken, dst *index.In
 
 		if updated {
 			delta := now.Sub(f.start).Seconds()
-			fmt.Printf("%s: %8d (%4.0f/sec) blobs %12d (%4.0fk/sec) bytes %8d/%-8d hit %8d miss\n",
-				now, blobs, float64(blobs)/delta, bytes, float64(bytes)/(delta*1000), hit1, hit2, miss)
+			fmt.Printf("%s: %8d (%4.0f/sec) blobs %12d (%4.0fk/sec) bytes %8d hit %8d miss\n",
+				now, blobs, float64(blobs)/delta, bytes, float64(bytes)/(delta*1000), hit, miss)
 		}
 		start := time.Now()
 		r := b.Open()
