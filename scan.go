@@ -19,8 +19,10 @@ import (
 )
 
 var (
-	blobDir  = flag.String("blob_dir", "", "Camlistore blob directory")
-	indexDir = flag.String("index_dir", "", "New leveldb index directory")
+	blobDir   = flag.String("blob_dir", "", "Camlistore blob directory")
+	indexDir  = flag.String("index_dir", "", "New leveldb index directory")
+	cacheSize = flag.Int("cache_size", 1024, "Blob cache size")
+	parallel  = flag.Int("parallel", 1, "Parallel blobstore walkers")
 )
 
 type stats struct {
@@ -37,13 +39,14 @@ type FetcherEnumerator struct {
 	stats  stats
 }
 
-const cacheSize = 4000
-
 func (f *FetcherEnumerator) Add(b *blob.Blob) {
+	if *cacheSize <= 0 {
+		return
+	}
 	f.c1[b.Ref().Digest()] = b
-	if len(f.c1) >= cacheSize {
+	if len(f.c1) >= *cacheSize {
 		f.c2 = f.c1
-		f.c1 = make(map[string]*blob.Blob, cacheSize)
+		f.c1 = make(map[string]*blob.Blob, *cacheSize)
 	}
 }
 
@@ -159,15 +162,16 @@ func main() {
 
 	fe := FetcherEnumerator{
 		FetcherEnumerator: s,
-		c1:                make(map[string]*blob.Blob, cacheSize),
+		c1:                make(map[string]*blob.Blob, *cacheSize),
 		start:             time.Now(),
 	}
 	dst.InitBlobSource(&fe)
 
 	ch := make(chan blobserver.BlobAndToken)
 	go fe.PrintStats()
-	go fe.Index(ch, dst)
-	go fe.Index(ch, dst)
+	for i := 0; i < *parallel; i++ {
+		go fe.Index(ch, dst)
+	}
 	ctx := context.New()
 	if err := src.StreamBlobs(ctx, ch, ""); err != nil {
 		log.Fatal(err)
