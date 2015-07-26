@@ -23,11 +23,13 @@ var (
 
 type FetcherEnumerator struct {
 	blobserver.FetcherEnumerator
+	start time.Time
 
 	mu               sync.Mutex
 	c1, c2           map[string]*blob.Blob
 	hit1, hit2, miss int
 	blobs, bytes     int64
+	updated          time.Time
 }
 
 const cacheSize = 4000
@@ -64,7 +66,6 @@ func (f *FetcherEnumerator) Fetch(ref blob.Ref) (io.ReadCloser, uint32, error) {
 }
 
 func (f *FetcherEnumerator) Index(ch chan blobserver.BlobAndToken, dst *index.Index) {
-	t := time.Now()
 	for b := range ch {
 		valid := b.ValidContents()
 
@@ -77,14 +78,18 @@ func (f *FetcherEnumerator) Index(ch chan blobserver.BlobAndToken, dst *index.In
 		f.bytes += int64(b.Size())
 		blobs, bytes := f.blobs, f.bytes
 		hit1, hit2, miss := f.hit1, f.hit2, f.miss
+
+		now := time.Now()
+		updated := now.Sub(f.updated) > 10*time.Second
+		if updated {
+			f.updated = now
+		}
 		f.mu.Unlock()
 
-		if blobs%1000 == 0 {
-			now := time.Now()
-			delta := now.Sub(t).Seconds()
-			t = now
-			fmt.Printf("%8d (%4.0f/sec) blobs %12d bytes %8d/%-8d hit %8d miss\n",
-				blobs, 1000.0/delta, bytes, hit1, hit2, miss)
+		if updated {
+			delta := now.Sub(f.start).Seconds()
+			fmt.Printf("%s: %8d (%4.0f/sec) blobs %12d (%4.0fk/sec) bytes %8d/%-8d hit %8d miss\n",
+				now, blobs, float64(blobs)/delta, bytes, float64(bytes)/(delta*1000), hit1, hit2, miss)
 		}
 		start := time.Now()
 		r := b.Open()
@@ -132,6 +137,7 @@ func main() {
 	fe := FetcherEnumerator{
 		FetcherEnumerator: s,
 		c1:                make(map[string]*blob.Blob, cacheSize),
+		start:             time.Now(),
 	}
 	dst.InitBlobSource(&fe)
 
