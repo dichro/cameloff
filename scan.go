@@ -14,6 +14,8 @@ import (
 	"camlistore.org/pkg/context"
 	"camlistore.org/pkg/index"
 	"camlistore.org/pkg/sorted/leveldb"
+
+	humanize "github.com/dustin/go-humanize"
 )
 
 var (
@@ -21,15 +23,18 @@ var (
 	indexDir = flag.String("index_dir", "", "New leveldb index directory")
 )
 
+type stats struct {
+	hit, miss    int
+	blobs, bytes uint64
+}
+
 type FetcherEnumerator struct {
 	blobserver.FetcherEnumerator
 	start time.Time
 
-	mu           sync.Mutex
-	c1, c2       map[string]*blob.Blob
-	hit, miss    int
-	blobs, bytes int64
-	updated      time.Time
+	mu     sync.Mutex
+	c1, c2 map[string]*blob.Blob
+	stats  stats
 }
 
 const cacheSize = 4000
@@ -47,14 +52,14 @@ func (f *FetcherEnumerator) CacheFetch(ref blob.Ref) *blob.Blob {
 	defer f.mu.Unlock()
 	d := ref.Digest()
 	if b, ok := f.c1[d]; ok {
-		f.hit++
+		f.stats.hit++
 		return b
 	}
 	if b, ok := f.c2[d]; ok {
-		f.hit++
+		f.stats.hit++
 		return b
 	}
-	f.miss++
+	f.stats.miss++
 	return nil
 }
 
@@ -63,6 +68,37 @@ func (f *FetcherEnumerator) Fetch(ref blob.Ref) (io.ReadCloser, uint32, error) {
 		return b.Open(), b.Size(), nil
 	}
 	return f.FetcherEnumerator.Fetch(ref)
+}
+
+func (f *FetcherEnumerator) PrintStats() {
+	var (
+		start     = time.Now()
+		then      = time.Now()
+		lastStats stats
+	)
+	for _ = range time.Tick(10 * time.Second) {
+		f.mu.Lock()
+		now := time.Now()
+		stats := f.stats
+		f.mu.Unlock()
+
+		elapsed := now.Sub(start)
+		delta := uint64(now.Sub(then).Seconds())
+
+		bytes := uint64(stats.bytes - lastStats.bytes)
+		blobs := float64(stats.blobs - lastStats.blobs)
+		hit := float64(stats.hit - lastStats.hit)
+		miss := float64(stats.miss - lastStats.miss)
+
+		fmt.Printf("%s: %s blobs (%s/sec); %s bytes (%s/sec); cache %s@%2.0f%%\n",
+			elapsed,
+			humanize.SI(float64(stats.blobs), ""), humanize.SI(blobs/float64(delta), ""),
+			humanize.Bytes(stats.bytes), humanize.Bytes(bytes/uint64(delta)),
+			humanize.SI(hit+miss, ""), 100*hit/(hit+miss))
+
+		lastStats = stats
+		then = now
+	}
 }
 
 func (f *FetcherEnumerator) Index(ch chan blobserver.BlobAndToken, dst *index.Index) {
@@ -74,23 +110,10 @@ func (f *FetcherEnumerator) Index(ch chan blobserver.BlobAndToken, dst *index.In
 			b := b
 			f.Add(b.Blob)
 		}
-		f.blobs++
-		f.bytes += int64(b.Size())
-		blobs, bytes := f.blobs, f.bytes
-		hit, miss := f.hit, f.miss
-
-		now := time.Now()
-		updated := now.Sub(f.updated) > 10*time.Second
-		if updated {
-			f.updated = now
-		}
+		f.stats.blobs++
+		f.stats.bytes += uint64(b.Size())
 		f.mu.Unlock()
 
-		if updated {
-			delta := now.Sub(f.start).Seconds()
-			fmt.Printf("%s: %8d (%4.0f/sec) blobs %12d (%4.0fk/sec) bytes %8d hit %8d miss\n",
-				now, blobs, float64(blobs)/delta, bytes, float64(bytes)/(delta*1000), hit, miss)
-		}
 		start := time.Now()
 		r := b.Open()
 		_, err := dst.ReceiveBlob(b.Ref(), r)
@@ -142,6 +165,7 @@ func main() {
 	dst.InitBlobSource(&fe)
 
 	ch := make(chan blobserver.BlobAndToken)
+	go fe.PrintStats()
 	go fe.Index(ch, dst)
 	go fe.Index(ch, dst)
 	ctx := context.New()
