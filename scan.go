@@ -93,7 +93,7 @@ func (f *FetcherEnumerator) PrintStats() {
 		hit := float64(stats.hit - lastStats.hit)
 		miss := float64(stats.miss - lastStats.miss)
 
-		fmt.Printf("%s: %s blobs (%s/sec); %s bytes (%s/sec); cache %s@%2.0f%%\n",
+		fmt.Printf("%s: %s blobs (%s/sec); %s bytes (%s/sec); cache %s@%.0f%%\n",
 			elapsed,
 			humanize.SI(float64(stats.blobs), ""), humanize.SI(blobs/float64(delta), ""),
 			humanize.Bytes(stats.bytes), humanize.Bytes(bytes/uint64(delta)),
@@ -105,6 +105,7 @@ func (f *FetcherEnumerator) PrintStats() {
 }
 
 func (f *FetcherEnumerator) Index(ch chan blobserver.BlobAndToken, dst *index.Index) {
+	var long time.Duration
 	for b := range ch {
 		valid := b.ValidContents()
 
@@ -125,8 +126,9 @@ func (f *FetcherEnumerator) Index(ch chan blobserver.BlobAndToken, dst *index.In
 		}
 		r.Close()
 		if elapsed := time.Now().Sub(start); elapsed > time.Second {
-			fmt.Printf("elapsed %s to index sha1-%s at '%s'\n",
-				elapsed, b.Ref().Digest(), b.Token)
+			long += elapsed
+			fmt.Printf("elapsed %s to index sha1-%s at '%s' (cumulative %s)\n",
+				elapsed, b.Ref().Digest(), b.Token, long)
 			// pull some data out of the index to
 			// describe blob? print continuation
 			// token for easier restart?
