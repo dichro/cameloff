@@ -96,11 +96,13 @@ func (f *FetcherEnumerator) PrintStats() {
 		hit := float64(stats.hit - lastStats.hit)
 		miss := float64(stats.miss - lastStats.miss)
 
-		fmt.Printf("%s: %s blobs (%s/sec); %s bytes (%s/sec); cache %s@%.0f%%\n",
+		fmt.Printf("%s: %s blobs (%s/sec); %s bytes (%s/sec); cache %s@%.0f%% (cum %.0f%%)\n",
 			elapsed,
 			humanize.SI(float64(stats.blobs), ""), humanize.SI(blobs/float64(delta), ""),
 			humanize.Bytes(stats.bytes), humanize.Bytes(bytes/uint64(delta)),
-			humanize.SI(hit+miss, ""), 100*hit/(hit+miss))
+			humanize.SI(hit+miss, ""), 100*hit/(hit+miss),
+			float64(100*stats.hit)/float64(stats.hit+stats.miss),
+		)
 
 		lastStats = stats
 		then = now
