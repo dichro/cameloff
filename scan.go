@@ -19,10 +19,10 @@ import (
 )
 
 var (
-	blobDir   = flag.String("blob_dir", "", "Camlistore blob directory")
-	indexDir  = flag.String("index_dir", "", "New leveldb index directory")
-	cacheSize = flag.Int("cache_size", 1024, "Blob cache size")
-	parallel  = flag.Int("parallel", 1, "Parallel blobstore walkers")
+	blobDir     = flag.String("blob_dir", "", "Camlistore blob directory")
+	indexDir    = flag.String("index_dir", "", "New leveldb index directory")
+	cacheSizeMB = flag.Int("cache_size_mb", 1024, "Blob cache size in MB")
+	parallel    = flag.Int("parallel", 1, "Parallel blobstore walkers")
 )
 
 type stats struct {
@@ -35,19 +35,22 @@ type FetcherEnumerator struct {
 	start time.Time
 
 	mu     sync.Mutex
+	cached int64
 	c1, c2 map[string]*blob.Blob
 	stats  stats
 }
 
 func (f *FetcherEnumerator) Add(b *blob.Blob) {
-	if *cacheSize <= 0 {
+	if *cacheSizeMB <= 0 {
 		return
 	}
-	f.c1[b.Ref().Digest()] = b
-	if len(f.c1) >= *cacheSize {
+	f.cached += int64(b.Size())
+	if f.cached >= int64(*cacheSizeMB)*512*1024 {
+		f.cached = 0
 		f.c2 = f.c1
-		f.c1 = make(map[string]*blob.Blob, *cacheSize)
+		f.c1 = make(map[string]*blob.Blob)
 	}
+	f.c1[b.Ref().Digest()] = b
 }
 
 func (f *FetcherEnumerator) CacheFetch(ref blob.Ref) *blob.Blob {
@@ -164,7 +167,7 @@ func main() {
 
 	fe := FetcherEnumerator{
 		FetcherEnumerator: s,
-		c1:                make(map[string]*blob.Blob, *cacheSize),
+		c1:                make(map[string]*blob.Blob),
 		start:             time.Now(),
 	}
 	dst.InitBlobSource(&fe)
