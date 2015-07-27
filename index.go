@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"log"
 
 	"camlistore.org/pkg/blob"
@@ -28,7 +29,8 @@ func main() {
 	in := index.NewMemoryIndex()
 	in.InitBlobSource(s)
 
-	for _, arg := range flag.Args() {
+	for i, arg := range flag.Args() {
+		fmt.Println(i, "index entries", count(in))
 		br, ok := blob.Parse(arg)
 		if !ok {
 			log.Fatal("unparseable ", arg)
@@ -44,4 +46,11 @@ func main() {
 		}
 		r.Close()
 	}
+	fmt.Println("end index entries", count(in))
+}
+
+func count(in *index.Index) (entries int) {
+	for it := in.Storage().Find("", ""); it.Next(); entries++ {
+	}
+	return
 }
