@@ -30,6 +30,13 @@ type stats struct {
 	blobs, bytes uint64
 }
 
+// FetcherEnumerator does bad caching. Each Index goroutine should
+// maintain its own cache, since its likeliest to have the blobs that
+// will (ultimately) be used by the honking great big file that it's
+// indexing. Having a shared cache means that the only usefully cached
+// blobs for that operation will have been evicted by the other
+// threads merrily running ahead before the file gets processed to
+// that point.
 type FetcherEnumerator struct {
 	blobserver.FetcherEnumerator
 	start time.Time
