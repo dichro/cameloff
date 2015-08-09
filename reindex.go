@@ -23,6 +23,7 @@ var (
 	indexDir    = flag.String("index_dir", "", "New leveldb index directory")
 	cacheSizeMB = flag.Int("cache_size_mb", 1024, "Blob cache size in MB")
 	parallel    = flag.Int("parallel", 1, "Parallel blobstore walkers")
+	streamStart = flag.String("stream_start", "", "Start position for blobstreamer")
 )
 
 type stats struct {
@@ -187,7 +188,7 @@ func main() {
 		go fe.Index(ch, dst)
 	}
 	ctx := context.New()
-	if err := src.StreamBlobs(ctx, ch, ""); err != nil {
+	if err := src.StreamBlobs(ctx, ch, *streamStart); err != nil {
 		log.Fatal(err)
 	}
 }
