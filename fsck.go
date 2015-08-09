@@ -19,18 +19,37 @@ var (
 	blobDir = flag.String("blob_dir", "", "Camlistore blob directory")
 )
 
-type stats struct {
-	corrupt, data int
-	types         map[string]int
-}
+type stats map[string]int
 
 func (s stats) String() string {
-	parts := []string{fmt.Sprintf("corrupt: %d, data %d", s.corrupt, s.data)}
-	for t, c := range s.types {
+	parts := []string{}
+	for t, c := range s {
 		parts = append(parts, fmt.Sprintf("%s: %d", t, c))
 	}
 	sort.Strings(parts)
 	return strings.Join(parts, ", ")
+}
+
+type blob struct {
+	location        string
+	needs, neededBy []string
+}
+
+type blobs map[string]*blob
+
+func (bs blobs) place(ref, location string) (b *blob, dup bool) {
+	b, dup = bs[ref]
+	if !dup {
+		// first mention of this blob ever
+		b = &blob{location: location}
+		bs[ref] = b
+		return
+	}
+	if len(b.location) == 0 {
+		// first concrete instance of this blob
+		dup = false
+	}
+	return
 }
 
 func main() {
@@ -39,7 +58,8 @@ func main() {
 	statsCh := time.Tick(10 * time.Second)
 	blobCh := streamBlobs(*blobDir)
 
-	stats := stats{types: make(map[string]int)}
+	stats := make(stats)
+	blobs := make(blobs)
 	for {
 		select {
 		case <-statsCh:
@@ -49,8 +69,17 @@ func main() {
 				return
 			}
 			if !b.ValidContents() {
-				stats.corrupt++
+				stats["corrupt"]++
+				continue
 			}
+			//
+			ref := b.Ref().String()
+			_, dup := blobs.place(ref, b.Token)
+			if dup {
+				stats["dup"]++
+			}
+
+			//
 			body := b.Open()
 			sn := index.NewBlobSniffer(b.Ref())
 			io.Copy(sn, body)
@@ -58,9 +87,14 @@ func main() {
 			sn.Parse()
 			s, ok := sn.SchemaBlob()
 			if !ok {
-				stats.data++
-			} else {
-				stats.types[s.Type()]++
+				stats["data"]++
+				continue
+			}
+			t := s.Type()
+			stats[t]++
+			switch t {
+			case "static-set":
+
 			}
 		}
 	}
