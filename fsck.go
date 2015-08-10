@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"camlistore.org/pkg/blob"
 	"camlistore.org/pkg/blobserver"
 	"camlistore.org/pkg/blobserver/dir"
 	"camlistore.org/pkg/context"
@@ -30,18 +31,28 @@ func (s stats) String() string {
 	return strings.Join(parts, ", ")
 }
 
-type blob struct {
+type status struct {
 	location        string
 	needs, neededBy []string
 }
 
-type blobs map[string]*blob
+func (b *status) resolve(ref string) {
+	needs := make([]string, 0, len(b.needs)-1)
+	for _, n := range b.needs {
+		if n != ref {
+			needs = append(needs, n)
+		}
+	}
+	b.needs = needs
+}
 
-func (bs blobs) place(ref, location string) (b *blob, dup bool) {
+type blobs map[string]*status
+
+func (bs blobs) place(ref, location string) (b *status, dup bool) {
 	b, dup = bs[ref]
 	if !dup {
 		// first mention of this blob ever
-		b = &blob{location: location}
+		b = &status{location: location}
 		bs[ref] = b
 		return
 	}
@@ -49,7 +60,29 @@ func (bs blobs) place(ref, location string) (b *blob, dup bool) {
 		// first concrete instance of this blob
 		dup = false
 	}
+	for _, needer := range b.neededBy {
+		bs[needer].resolve(ref)
+	}
+	b.neededBy = nil
 	return
+}
+
+func (bs blobs) needs(by string, needed []blob.Ref) {
+	if len(needed) == 0 {
+		return
+	}
+	byStatus := bs[by]
+	for _, n := range needed {
+		n := n.String()
+		if b, ok := bs[n]; ok {
+			if len(b.location) == 0 {
+				b.neededBy = append(b.neededBy, by)
+			}
+		} else {
+			bs[n] = &status{neededBy: []string{by}}
+			byStatus.needs = append(byStatus.needs, n)
+		}
+	}
 }
 
 func main() {
@@ -63,7 +96,19 @@ func main() {
 	for {
 		select {
 		case <-statsCh:
-			fmt.Println(stats)
+			fmt.Println(time.Now(), stats)
+			var ok, pending, missing int
+			for _, b := range blobs {
+				switch {
+				case len(b.location) == 0:
+					missing++
+				case len(b.needs) != 0:
+					pending++
+				default:
+					ok++
+				}
+			}
+			fmt.Println(time.Now(), "ok", ok, "pending", pending, "missing", missing)
 		case b, ok := <-blobCh:
 			if !ok {
 				return
@@ -94,7 +139,7 @@ func main() {
 			stats[t]++
 			switch t {
 			case "static-set":
-
+				blobs.needs(ref, s.StaticSetMembers())
 			}
 		}
 	}
