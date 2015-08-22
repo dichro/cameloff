@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"camlistore.org/pkg/blob"
 	"camlistore.org/pkg/blobserver"
 	"camlistore.org/pkg/blobserver/dir"
 	"camlistore.org/pkg/context"
@@ -67,13 +66,9 @@ func (bs blobs) place(ref, location string) (b *status, dup bool) {
 	return
 }
 
-func (bs blobs) needs(by string, needed []blob.Ref) {
-	if len(needed) == 0 {
-		return
-	}
+func (bs blobs) needs(by string, needed []string) {
 	byStatus := bs[by]
 	for _, n := range needed {
-		n := n.String()
 		if b, ok := bs[n]; ok {
 			if len(b.location) == 0 {
 				b.neededBy = append(b.neededBy, by)
@@ -137,9 +132,24 @@ func main() {
 			}
 			t := s.Type()
 			stats[t]++
+			needs := []string{}
 			switch t {
 			case "static-set":
-				blobs.needs(ref, s.StaticSetMembers())
+				for _, r := range s.StaticSetMembers() {
+					needs = append(needs, r.String())
+				}
+			case "file":
+				for _, bp := range s.ByteParts() {
+					if r := bp.BlobRef; r.Valid() {
+						needs = append(needs, r.String())
+					}
+					if r := bp.BytesRef; r.Valid() {
+						needs = append(needs, r.String())
+					}
+				}
+			}
+			if len(needs) > 0 {
+				blobs.needs(ref, needs)
 			}
 		}
 	}
