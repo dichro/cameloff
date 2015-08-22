@@ -13,10 +13,12 @@ import (
 	"camlistore.org/pkg/blobserver/dir"
 	"camlistore.org/pkg/context"
 	"camlistore.org/pkg/index"
+	"github.com/dichro/cameloff/db"
 )
 
 var (
 	blobDir = flag.String("blob_dir", "", "Camlistore blob directory")
+	dbDir   = flag.String("db_dir", "", "FSCK state database directory")
 )
 
 type stats map[string]int
@@ -86,6 +88,10 @@ func main() {
 	statsCh := time.Tick(10 * time.Second)
 	blobCh := streamBlobs(*blobDir)
 
+	_, err := db.New(*dbDir)
+	if err != nil {
+		log.Fatal(err)
+	}
 	stats := make(stats)
 	blobs := make(blobs)
 	for {
