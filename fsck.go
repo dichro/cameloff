@@ -86,12 +86,19 @@ func main() {
 	flag.Parse()
 
 	statsCh := time.Tick(10 * time.Second)
-	blobCh := streamBlobs(*blobDir)
 
-	_, err := db.New(*dbDir)
+	fsck, err := db.New(*dbDir)
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	last := fsck.Last()
+	if last != "" {
+		fmt.Println("resuming blob scan at", last)
+	}
+
+	blobCh := streamBlobs(*blobDir, last)
+
 	stats := make(stats)
 	blobs := make(blobs)
 	for {
@@ -121,6 +128,9 @@ func main() {
 			//
 			ref := b.Ref().String()
 			_, dup := blobs.place(ref, b.Token)
+			if err := fsck.Place(ref, b.Token); err != nil {
+				log.Fatal(err)
+			}
 			if dup {
 				stats["dup"]++
 			}
@@ -161,7 +171,7 @@ func main() {
 	}
 }
 
-func streamBlobs(path string) <-chan blobserver.BlobAndToken {
+func streamBlobs(path, resume string) <-chan blobserver.BlobAndToken {
 	s, err := dir.New(path)
 	if err != nil {
 		log.Fatal(err)
@@ -175,7 +185,7 @@ func streamBlobs(path string) <-chan blobserver.BlobAndToken {
 	go func() {
 		defer close(ch)
 		ctx := context.New()
-		if err := bs.StreamBlobs(ctx, ch, ""); err != nil {
+		if err := bs.StreamBlobs(ctx, ch, resume); err != nil {
 			log.Fatal(err)
 		}
 	}()
