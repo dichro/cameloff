@@ -1,10 +1,10 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"io"
 	"log"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -14,11 +14,7 @@ import (
 	"camlistore.org/pkg/context"
 	"camlistore.org/pkg/index"
 	"github.com/dichro/cameloff/db"
-)
-
-var (
-	blobDir = flag.String("blob_dir", "", "Camlistore blob directory")
-	dbDir   = flag.String("db_dir", "", "FSCK state database directory")
+	"github.com/gonuts/commander"
 )
 
 type stats map[string]int
@@ -83,11 +79,62 @@ func (bs blobs) needs(by string, needed []string) {
 }
 
 func main() {
-	flag.Parse()
+	top := &commander.Command{
+		UsageLine: os.Args[0],
+	}
 
+	scan := &commander.Command{
+		UsageLine: "scan scans a diskpacked blobstore",
+	}
+	dbDir := scan.Flag.String("db_dir", "", "FSCK state database directory")
+	blobDir := scan.Flag.String("blob_dir", "", "Camlistore blob directory")
+	scan.Run = func(*commander.Command, []string) error {
+		scanBlobs(*dbDir, *blobDir)
+		return nil
+	}
+
+	missing := &commander.Command{
+		UsageLine: "missing prints unresolved references",
+	}
+	// TODO(dichro): yuck. How do I reuse the previous definition?
+	dbDir2 := missing.Flag.String("db_dir", "", "FSCK state database directory")
+	missing.Run = func(*commander.Command, []string) error {
+		return missingBlobs(*dbDir2)
+	}
+
+	top.Subcommands = []*commander.Command{
+		scan,
+		missing,
+	}
+
+	if err := top.Dispatch(os.Args[1:]); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func missingBlobs(dbDir string) error {
+	fsck, err := db.New(dbDir) // read-only?
+	if err != nil {
+		return err
+	}
+	seen := 0
+	for ref := range fsck.Missing() {
+		seen++
+		if seen < 10 {
+			fmt.Println(ref)
+		}
+		if seen == 10 {
+			fmt.Println("(skipping)")
+		}
+	}
+	fmt.Println("total", seen)
+	return nil
+}
+
+func scanBlobs(dbDir, blobDir string) {
 	statsCh := time.Tick(10 * time.Second)
 
-	fsck, err := db.New(*dbDir)
+	fsck, err := db.New(dbDir)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -97,7 +144,7 @@ func main() {
 		fmt.Println("resuming blob scan at", last)
 	}
 
-	blobCh := streamBlobs(*blobDir, last)
+	blobCh := streamBlobs(blobDir, last)
 
 	stats := make(stats)
 	blobs := make(blobs)
