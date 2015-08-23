@@ -123,6 +123,20 @@ func (d *DB) Stats() (s Stats) {
 	return
 }
 
+func (d *DB) Parents(ref string) (parents []string, err error) {
+	it := d.db.NewIterator(&util.Range{
+		Start: pack(parent, ref, start),
+		Limit: pack(parent, ref, limit),
+	}, nil)
+	defer it.Release()
+	for it.Next() {
+		parts := unpack(it.Key())
+		parents = append(parents, parts[2])
+	}
+	err = it.Error()
+	return
+}
+
 func pack(prefix string, fields ...string) []byte {
 	b := bytes.NewBufferString(prefix)
 	for _, f := range fields {

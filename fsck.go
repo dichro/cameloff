@@ -129,17 +129,39 @@ func missingBlobs(dbDir string) error {
 	if err != nil {
 		return err
 	}
-	seen := 0
+	roots := map[string]int{}
+	missing := 0
+	// TODO(dichro): cache Parents() call results?
 	for ref := range fsck.Missing() {
-		seen++
-		if seen < 10 {
-			fmt.Println(ref)
+		missing++
+		nodes, err := fsck.Parents(ref)
+		if err != nil {
+			log.Print(err)
+			continue
 		}
-		if seen == 10 {
-			fmt.Println("(skipping)")
+		for len(nodes) > 0 {
+			n := nodes[0]
+			nodes = nodes[1:]
+			switch p, err := fsck.Parents(n); {
+			case err != nil:
+				log.Print(err)
+			case len(p) == 0:
+				roots[n] += 1
+			default:
+				// TODO(dichro): loop detection
+				nodes = append(nodes, p...)
+			}
 		}
 	}
-	fmt.Println("total", seen)
+	fmt.Println("total", missing)
+	refs := make([]string, 0, len(roots))
+	for r := range roots {
+		refs = append(refs, r)
+	}
+	sort.Strings(refs)
+	for _, r := range refs {
+		fmt.Println(r, roots[r])
+	}
 	return nil
 }
 
