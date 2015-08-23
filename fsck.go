@@ -256,7 +256,6 @@ func streamBlobs(path, resume string) <-chan blobserver.BlobAndToken {
 
 	ch := make(chan blobserver.BlobAndToken, 10)
 	go func() {
-		defer close(ch)
 		ctx := context.New()
 		if err := bs.StreamBlobs(ctx, ch, resume); err != nil {
 			log.Fatal(err)
