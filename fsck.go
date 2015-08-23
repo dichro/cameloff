@@ -224,7 +224,7 @@ func scanBlobs(dbDir, blobDir string, restart bool) {
 			}
 			t := s.Type()
 			stats[t]++
-			needs := []string{}
+			var needs []string
 			switch t {
 			case "static-set":
 				for _, r := range s.StaticSetMembers() {
@@ -232,12 +232,27 @@ func scanBlobs(dbDir, blobDir string, restart bool) {
 				}
 			case "file":
 				for _, bp := range s.ByteParts() {
+					ok := false
 					if r := bp.BlobRef; r.Valid() {
 						needs = append(needs, r.String())
+						ok = true
 					}
 					if r := bp.BytesRef; r.Valid() {
 						needs = append(needs, r.String())
+						ok = true
 					}
+					if !ok {
+						log.Printf("%s (%s): no valid ref", ref, t)
+					}
+				}
+			case "directory":
+				switch r, ok := s.DirectoryEntries(); {
+				case !ok:
+					log.Printf("%s (%s): bad entries", ref, t)
+				case !r.Valid():
+					log.Printf("%s (%s): invalid entries", ref, t)
+				default:
+					needs = append(needs, r.String())
 				}
 			}
 			if err := fsck.Place(ref, b.Token, t, needs); err != nil {
