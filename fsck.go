@@ -128,9 +128,6 @@ func main() {
 			//
 			ref := b.Ref().String()
 			_, dup := blobs.place(ref, b.Token)
-			if err := fsck.Place(ref, b.Token); err != nil {
-				log.Fatal(err)
-			}
 			if dup {
 				stats["dup"]++
 			}
@@ -144,6 +141,9 @@ func main() {
 			s, ok := sn.SchemaBlob()
 			if !ok {
 				stats["data"]++
+				if err := fsck.Place(ref, b.Token, nil); err != nil {
+					log.Fatal(err)
+				}
 				continue
 			}
 			t := s.Type()
@@ -163,6 +163,9 @@ func main() {
 						needs = append(needs, r.String())
 					}
 				}
+			}
+			if err := fsck.Place(ref, b.Token, needs); err != nil {
+				log.Fatal(err)
 			}
 			if len(needs) > 0 {
 				blobs.needs(ref, needs)
