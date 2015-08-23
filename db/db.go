@@ -75,22 +75,37 @@ func (d *DB) Last() string {
 	return ""
 }
 
-// Missing returns the currently unknown blobs.
+// Missing streams the currently unknown blobs.
 func (d *DB) Missing() <-chan string {
 	ch := make(chan string)
-	go d.missing(ch)
+	go d.streamBlobs(ch, 1, &util.Range{
+		Start: pack(missing, start),
+		Limit: pack(missing, limit),
+	})
 	return ch
 }
 
-func (d *DB) missing(ch chan<- string) {
-	it := d.db.NewIterator(&util.Range{
-		Start: pack(missing, start),
-		Limit: pack(missing, limit),
-	}, nil)
+// List streams all known blobs of a particular type.
+func (d *DB) List(ct string) <-chan string {
+	var rng util.Range
+	if ct != "" {
+		rng.Start = pack(camliType, ct, start)
+		rng.Limit = pack(camliType, ct, limit)
+	} else {
+		rng.Start = pack(camliType, start)
+		rng.Limit = pack(camliType, limit)
+	}
+	ch := make(chan string)
+	go d.streamBlobs(ch, 2, &rng)
+	return ch
+}
+
+func (d *DB) streamBlobs(ch chan<- string, refPos int, rng *util.Range) {
+	it := d.db.NewIterator(rng, nil)
 	defer it.Release()
 	for it.Next() {
 		parts := unpack(it.Key())
-		ch <- parts[1]
+		ch <- parts[refPos]
 	}
 	close(ch)
 }
@@ -105,6 +120,7 @@ func (s Stats) String() string {
 		s.Blobs, s.Links, s.Missing, s.Unknown)
 }
 
+// Stats scans the entire index counting various things.
 func (d *DB) Stats() (s Stats) {
 	s.CamliTypes = make(map[string]int64)
 	it := d.db.NewIterator(nil, nil)

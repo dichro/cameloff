@@ -70,12 +70,21 @@ func main() {
 		},
 	}
 
+	list := &commander.Command{
+		UsageLine: "list lists blobs from the index",
+	}
+	camliType := list.Flag.String("camliType", "", "Type of blob to list")
+	list.Run = func(*commander.Command, []string) error {
+		return listBlobs(dbDir, *camliType)
+	}
+
 	top := &commander.Command{
 		UsageLine: os.Args[0],
 		Subcommands: []*commander.Command{
 			scan,
 			missing,
 			stats,
+			list,
 		},
 	}
 
@@ -87,6 +96,17 @@ func main() {
 	if err := top.Dispatch(os.Args[1:]); err != nil {
 		log.Fatal(err)
 	}
+}
+
+func listBlobs(dbDir, camliType string) error {
+	fsck, err := db.New(dbDir) // read-only?
+	if err != nil {
+		return err
+	}
+	for ref := range fsck.List(camliType) {
+		fmt.Println(ref)
+	}
+	return nil
 }
 
 func missingBlobs(dbDir string) error {
