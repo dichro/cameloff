@@ -58,17 +58,16 @@ func main() {
 
 	missing := &commander.Command{
 		UsageLine: "missing prints unresolved references",
-	}
-	missing.Run = func(*commander.Command, []string) error {
-		return missingBlobs(dbDir)
+		Run: func(*commander.Command, []string) error {
+			return missingBlobs(dbDir)
+		},
 	}
 
 	stats := &commander.Command{
 		UsageLine: "stats prints index stats",
-	}
-	// TODO(dichro): yuck. How do I reuse the previous definition?
-	stats.Run = func(*commander.Command, []string) error {
-		return statsBlobs(dbDir)
+		Run: func(*commander.Command, []string) error {
+			return statsBlobs(dbDir)
+		},
 	}
 
 	top := &commander.Command{
