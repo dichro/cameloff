@@ -79,32 +79,30 @@ func (bs blobs) needs(by string, needed []string) {
 }
 
 func main() {
+	var dbDir string
+
 	scan := &commander.Command{
 		UsageLine: "scan scans a diskpacked blobstore",
 	}
-	dbDir := scan.Flag.String("db_dir", "", "FSCK state database directory")
 	blobDir := scan.Flag.String("blob_dir", "", "Camlistore blob directory")
 	scan.Run = func(*commander.Command, []string) error {
-		scanBlobs(*dbDir, *blobDir)
+		scanBlobs(dbDir, *blobDir)
 		return nil
 	}
 
 	missing := &commander.Command{
 		UsageLine: "missing prints unresolved references",
 	}
-	// TODO(dichro): yuck. How do I reuse the previous definition?
-	dbDir2 := missing.Flag.String("db_dir", "", "FSCK state database directory")
 	missing.Run = func(*commander.Command, []string) error {
-		return missingBlobs(*dbDir2)
+		return missingBlobs(dbDir)
 	}
 
 	stats := &commander.Command{
 		UsageLine: "stats prints index stats",
 	}
 	// TODO(dichro): yuck. How do I reuse the previous definition?
-	dbDir3 := stats.Flag.String("db_dir", "", "FSCK state database directory")
 	stats.Run = func(*commander.Command, []string) error {
-		return statsBlobs(*dbDir3)
+		return statsBlobs(dbDir)
 	}
 
 	top := &commander.Command{
@@ -114,6 +112,11 @@ func main() {
 			missing,
 			stats,
 		},
+	}
+
+	// add --db_dir flag to everything
+	for _, cmd := range top.Subcommands {
+		cmd.Flag.StringVar(&dbDir, "db_dir", "", "FSCK state database directory")
 	}
 
 	if err := top.Dispatch(os.Args[1:]); err != nil {
