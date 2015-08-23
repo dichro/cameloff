@@ -135,7 +135,20 @@ func statsBlobs(dbDir string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Println(fsck.Stats())
+	s := fsck.Stats()
+	fmt.Println(s)
+	if len(s.CamliTypes) == 0 {
+		return nil
+	}
+	fmt.Println("camliTypes:")
+	camliTypes := []string{}
+	for t := range s.CamliTypes {
+		camliTypes = append(camliTypes, t)
+	}
+	sort.Strings(camliTypes)
+	for _, t := range camliTypes {
+		fmt.Printf("\t%s: %d\n", t, s.CamliTypes[t])
+	}
 	return nil
 }
 

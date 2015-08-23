@@ -97,6 +97,7 @@ func (d *DB) missing(ch chan<- string) {
 
 type Stats struct {
 	Blobs, Links, Missing, Unknown uint64
+	CamliTypes                     map[string]int64
 }
 
 func (s Stats) String() string {
@@ -105,6 +106,7 @@ func (s Stats) String() string {
 }
 
 func (d *DB) Stats() (s Stats) {
+	s.CamliTypes = make(map[string]int64)
 	it := d.db.NewIterator(nil, nil)
 	defer it.Release()
 	for it.Next() {
@@ -117,6 +119,8 @@ func (d *DB) Stats() (s Stats) {
 			s.Links++
 		case missing:
 			s.Missing++
+		case camliType:
+			s.CamliTypes[parts[1]]++
 		default:
 			s.Unknown++
 		}
