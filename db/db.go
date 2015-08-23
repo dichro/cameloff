@@ -22,10 +22,11 @@ func New(path string) (*DB, error) {
 	return &DB{db: db}, nil
 }
 
-var (
-	lastKey = []byte("last")
+const (
 	found   = "found"
 	missing = "missing"
+	parent  = "parent"
+	last    = "last"
 )
 
 // Place notes the presence of a blob at a particular location with
@@ -35,9 +36,9 @@ func (d *DB) Place(ref, location string, dependencies []string) (err error) {
 	// TODO(dichro): duplicates are interesting, but pretty rare,
 	// so probably not worth tracking?
 	b.Put(pack(found, ref), pack(location))
-	b.Put(lastKey, []byte(location))
+	b.Put(pack(last), pack(location))
 	for _, dep := range dependencies {
-		b.Put(pack("parent", dep, ref), nil)
+		b.Put(pack(parent, dep, ref), nil)
 		// TODO(dichro): should these always be looked up
 		// inline? Maybe a post-scan would be faster for bulk
 		// insert?
@@ -62,7 +63,7 @@ func (d *DB) Place(ref, location string, dependencies []string) (err error) {
 
 // Last returns the last location successfully Placed.
 func (d *DB) Last() string {
-	if data, err := d.db.Get(lastKey, nil); err == nil {
+	if data, err := d.db.Get(pack(last), nil); err == nil {
 		return string(data)
 	} else {
 		log.Print(err)
@@ -87,6 +88,35 @@ func (d *DB) missing(ch chan<- string) {
 		ch <- parts[1]
 	}
 	close(ch)
+}
+
+type Stats struct {
+	Blobs, Links, Missing, Unknown uint64
+}
+
+func (s Stats) String() string {
+	return fmt.Sprintf("%d blobs, %d links, %d missing; %d unknown index entries",
+		s.Blobs, s.Links, s.Missing, s.Unknown)
+}
+
+func (d *DB) Stats() (s Stats) {
+	it := d.db.NewIterator(nil, nil)
+	defer it.Release()
+	for it.Next() {
+		parts := unpack(it.Key())
+		switch parts[0] {
+		case last:
+		case found:
+			s.Blobs++
+		case parent:
+			s.Links++
+		case missing:
+			s.Missing++
+		default:
+			s.Unknown++
+		}
+	}
+	return
 }
 
 func pack(prefix string, fields ...string) []byte {

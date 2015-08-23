@@ -79,10 +79,6 @@ func (bs blobs) needs(by string, needed []string) {
 }
 
 func main() {
-	top := &commander.Command{
-		UsageLine: os.Args[0],
-	}
-
 	scan := &commander.Command{
 		UsageLine: "scan scans a diskpacked blobstore",
 	}
@@ -102,9 +98,22 @@ func main() {
 		return missingBlobs(*dbDir2)
 	}
 
-	top.Subcommands = []*commander.Command{
-		scan,
-		missing,
+	stats := &commander.Command{
+		UsageLine: "stats prints index stats",
+	}
+	// TODO(dichro): yuck. How do I reuse the previous definition?
+	dbDir3 := stats.Flag.String("db_dir", "", "FSCK state database directory")
+	stats.Run = func(*commander.Command, []string) error {
+		return statsBlobs(*dbDir3)
+	}
+
+	top := &commander.Command{
+		UsageLine: os.Args[0],
+		Subcommands: []*commander.Command{
+			scan,
+			missing,
+			stats,
+		},
 	}
 
 	if err := top.Dispatch(os.Args[1:]); err != nil {
@@ -128,6 +137,15 @@ func missingBlobs(dbDir string) error {
 		}
 	}
 	fmt.Println("total", seen)
+	return nil
+}
+
+func statsBlobs(dbDir string) error {
+	fsck, err := db.New(dbDir) // read-only?
+	if err != nil {
+		return err
+	}
+	fmt.Println(fsck.Stats())
 	return nil
 }
 
