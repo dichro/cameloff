@@ -230,8 +230,10 @@ func scanBlobs(dbDir, blobDir string, restart bool) {
 				for _, r := range s.StaticSetMembers() {
 					needs = append(needs, r.String())
 				}
+			case "bytes":
+				fallthrough
 			case "file":
-				for _, bp := range s.ByteParts() {
+				for i, bp := range s.ByteParts() {
 					ok := false
 					if r := bp.BlobRef; r.Valid() {
 						needs = append(needs, r.String())
@@ -242,7 +244,7 @@ func scanBlobs(dbDir, blobDir string, restart bool) {
 						ok = true
 					}
 					if !ok {
-						log.Printf("%s (%s): no valid ref", ref, t)
+						log.Printf("%s (%s): no valid ref in part %d", ref, t, i)
 					}
 				}
 			case "directory":
