@@ -50,8 +50,9 @@ func main() {
 		UsageLine: "scan scans a diskpacked blobstore",
 	}
 	blobDir := scan.Flag.String("blob_dir", "", "Camlistore blob directory")
+	restart := scan.Flag.Bool("restart", false, "Restart scan from start, ignoring prior progress")
 	scan.Run = func(*commander.Command, []string) error {
-		scanBlobs(dbDir, *blobDir)
+		scanBlobs(dbDir, *blobDir, *restart)
 		return nil
 	}
 
@@ -139,7 +140,7 @@ func statsBlobs(dbDir string) error {
 	return nil
 }
 
-func scanBlobs(dbDir, blobDir string) {
+func scanBlobs(dbDir, blobDir string, restart bool) {
 	statsCh := time.Tick(10 * time.Second)
 
 	fsck, err := db.New(dbDir)
@@ -149,7 +150,12 @@ func scanBlobs(dbDir, blobDir string) {
 
 	last := fsck.Last()
 	if last != "" {
-		fmt.Println("resuming blob scan at", last)
+		if restart {
+			fmt.Println("overwriting blob scan resume marker at", last)
+			last = ""
+		} else {
+			fmt.Println("resuming blob scan at", last)
+		}
 	}
 
 	blobCh := streamBlobs(blobDir, last)
