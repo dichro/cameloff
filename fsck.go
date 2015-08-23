@@ -168,23 +168,10 @@ func scanBlobs(dbDir, blobDir string) {
 	blobCh := streamBlobs(blobDir, last)
 
 	stats := make(stats)
-	blobs := make(blobs)
 	for {
 		select {
 		case <-statsCh:
 			fmt.Println(time.Now(), stats)
-			var ok, pending, missing int
-			for _, b := range blobs {
-				switch {
-				case len(b.location) == 0:
-					missing++
-				case len(b.needs) != 0:
-					pending++
-				default:
-					ok++
-				}
-			}
-			fmt.Println(time.Now(), "ok", ok, "pending", pending, "missing", missing)
 		case b, ok := <-blobCh:
 			if !ok {
 				return
@@ -195,10 +182,6 @@ func scanBlobs(dbDir, blobDir string) {
 			}
 			//
 			ref := b.Ref().String()
-			_, dup := blobs.place(ref, b.Token)
-			if dup {
-				stats["dup"]++
-			}
 
 			//
 			body := b.Open()
@@ -234,9 +217,6 @@ func scanBlobs(dbDir, blobDir string) {
 			}
 			if err := fsck.Place(ref, b.Token, needs); err != nil {
 				log.Fatal(err)
-			}
-			if len(needs) > 0 {
-				blobs.needs(ref, needs)
 			}
 		}
 	}
