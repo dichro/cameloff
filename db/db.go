@@ -27,6 +27,9 @@ const (
 	missing = "missing"
 	parent  = "parent"
 	last    = "last"
+
+	start = "\x00"
+	limit = "\xff"
 )
 
 // Place notes the presence of a blob at a particular location with
@@ -47,8 +50,8 @@ func (d *DB) Place(ref, location string, dependencies []string) (err error) {
 		}
 	}
 	it := d.db.NewIterator(&util.Range{
-		Start: pack(missing, ref),
-		Limit: pack(missing, ref, "z"),
+		Start: pack(missing, ref, start),
+		Limit: pack(missing, ref, limit),
 	}, nil)
 	defer it.Release()
 	for it.Next() {
@@ -80,7 +83,8 @@ func (d *DB) Missing() <-chan string {
 
 func (d *DB) missing(ch chan<- string) {
 	it := d.db.NewIterator(&util.Range{
-		Start: pack(missing),
+		Start: pack(missing, start),
+		Limit: pack(missing, limit),
 	}, nil)
 	defer it.Release()
 	for it.Next() {
