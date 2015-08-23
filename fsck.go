@@ -43,41 +43,6 @@ func (b *status) resolve(ref string) {
 	b.needs = needs
 }
 
-type blobs map[string]*status
-
-func (bs blobs) place(ref, location string) (b *status, dup bool) {
-	b, dup = bs[ref]
-	if !dup {
-		// first mention of this blob ever
-		b = &status{location: location}
-		bs[ref] = b
-		return
-	}
-	if len(b.location) == 0 {
-		// first concrete instance of this blob
-		dup = false
-	}
-	for _, needer := range b.neededBy {
-		bs[needer].resolve(ref)
-	}
-	b.neededBy = nil
-	return
-}
-
-func (bs blobs) needs(by string, needed []string) {
-	byStatus := bs[by]
-	for _, n := range needed {
-		if b, ok := bs[n]; ok {
-			if len(b.location) == 0 {
-				b.neededBy = append(b.neededBy, by)
-			}
-		} else {
-			bs[n] = &status{neededBy: []string{by}}
-			byStatus.needs = append(byStatus.needs, n)
-		}
-	}
-}
-
 func main() {
 	var dbDir string
 
@@ -214,7 +179,7 @@ func scanBlobs(dbDir, blobDir string) {
 			s, ok := sn.SchemaBlob()
 			if !ok {
 				stats["data"]++
-				if err := fsck.Place(ref, b.Token, nil); err != nil {
+				if err := fsck.Place(ref, b.Token, "data", nil); err != nil {
 					log.Fatal(err)
 				}
 				continue
@@ -237,7 +202,7 @@ func scanBlobs(dbDir, blobDir string) {
 					}
 				}
 			}
-			if err := fsck.Place(ref, b.Token, needs); err != nil {
+			if err := fsck.Place(ref, b.Token, t, needs); err != nil {
 				log.Fatal(err)
 			}
 		}

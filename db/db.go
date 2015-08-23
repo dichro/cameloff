@@ -23,23 +23,24 @@ func New(path string) (*DB, error) {
 }
 
 const (
-	found   = "found"
-	missing = "missing"
-	parent  = "parent"
-	last    = "last"
+	found     = "found"
+	missing   = "missing"
+	parent    = "parent"
+	last      = "last"
+	camliType = "type"
 
 	start = "\x00"
 	limit = "\xff"
 )
 
-// Place notes the presence of a blob at a particular location with
-// known dependencies.
-func (d *DB) Place(ref, location string, dependencies []string) (err error) {
+// Place notes the presence of a blob at a particular location.
+func (d *DB) Place(ref, location, ct string, dependencies []string) (err error) {
 	b := new(leveldb.Batch)
 	// TODO(dichro): duplicates are interesting, but pretty rare,
 	// so probably not worth tracking?
 	b.Put(pack(found, ref), pack(location))
 	b.Put(pack(last), pack(location))
+	b.Put(pack(camliType, ct, ref), nil)
 	for _, dep := range dependencies {
 		b.Put(pack(parent, dep, ref), nil)
 		// TODO(dichro): should these always be looked up
