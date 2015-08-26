@@ -217,7 +217,7 @@ func scanBlobs(dbDir, blobDir string, restart bool) {
 			s, ok := sn.SchemaBlob()
 			if !ok {
 				stats["data"]++
-				if err := fsck.Place(ref, b.Token, "data", nil); err != nil {
+				if err := fsck.Place(ref, b.Token, "", nil); err != nil {
 					log.Fatal(err)
 				}
 				continue

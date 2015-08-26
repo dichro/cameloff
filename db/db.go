@@ -23,12 +23,14 @@ func New(path string) (*DB, error) {
 }
 
 const (
+	// prefixes used in leveldb
 	found     = "found"
 	missing   = "missing"
 	parent    = "parent"
 	last      = "last"
 	camliType = "type"
 
+	// bounds for iterators
 	start = "\x00"
 	limit = "\xff"
 )
@@ -40,7 +42,9 @@ func (d *DB) Place(ref, location, ct string, dependencies []string) (err error) 
 	// so probably not worth tracking?
 	b.Put(pack(found, ref), pack(location))
 	b.Put(pack(last), pack(location))
-	b.Put(pack(camliType, ct, ref), nil)
+	if ct != "" {
+		b.Put(pack(camliType, ct, ref), nil)
+	}
 	for _, dep := range dependencies {
 		b.Put(pack(parent, dep, ref), nil)
 		// TODO(dichro): should these always be looked up
