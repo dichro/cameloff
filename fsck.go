@@ -160,7 +160,14 @@ func printHierarchy(fsck *db.DB, bs blob.Fetcher, depth int, nodes []string) {
 			camliType = fmt.Sprintf("Fetch(): %s", err)
 		} else {
 			if s, ok := parseSchema(ref, body); ok {
-				camliType = s.Type()
+				switch t := s.Type(); t {
+				case "file":
+					camliType = fmt.Sprintf("%s: %q", t, s.FileName())
+				case "directory":
+					camliType = fmt.Sprintf("%s: %q", t, s.FileName())
+				default:
+					camliType = t
+				}
 			}
 			body.Close()
 		}
