@@ -9,12 +9,14 @@ import (
 	"strings"
 	"time"
 
+	"camlistore.org/pkg/blob"
 	"camlistore.org/pkg/blobserver"
 	"camlistore.org/pkg/blobserver/dir"
 	"camlistore.org/pkg/context"
 	"camlistore.org/pkg/index"
-	"github.com/dichro/cameloff/db"
 	"github.com/gonuts/commander"
+
+	"github.com/dichro/cameloff/db"
 )
 
 type stats map[string]int
@@ -44,22 +46,21 @@ func (b *status) resolve(ref string) {
 }
 
 func main() {
-	var dbDir string
+	var dbDir, blobDir string
 
 	scan := &commander.Command{
 		UsageLine: "scan scans a diskpacked blobstore",
 	}
-	blobDir := scan.Flag.String("blob_dir", "", "Camlistore blob directory")
 	restart := scan.Flag.Bool("restart", false, "Restart scan from start, ignoring prior progress")
 	scan.Run = func(*commander.Command, []string) error {
-		scanBlobs(dbDir, *blobDir, *restart)
+		scanBlobs(dbDir, blobDir, *restart)
 		return nil
 	}
 
 	missing := &commander.Command{
 		UsageLine: "missing prints unresolved references",
 		Run: func(*commander.Command, []string) error {
-			return missingBlobs(dbDir)
+			return missingBlobs(dbDir, blobDir)
 		},
 	}
 
@@ -93,6 +94,11 @@ func main() {
 		cmd.Flag.StringVar(&dbDir, "db_dir", "", "FSCK state database directory")
 	}
 
+	// add --blob_dir as appropriate
+	for _, cmd := range []*commander.Command{scan, missing} {
+		cmd.Flag.StringVar(&blobDir, "blob_dir", "", "Camlistore blob directory")
+	}
+
 	if err := top.Dispatch(os.Args[1:]); err != nil {
 		log.Fatal(err)
 	}
@@ -109,15 +115,24 @@ func listBlobs(dbDir, camliType string) error {
 	return nil
 }
 
-func missingBlobs(dbDir string) error {
+func missingBlobs(dbDir, blobDir string) error {
 	fsck, err := db.New(dbDir) // read-only?
 	if err != nil {
 		return err
 	}
+	defer fsck.Close()
+	bs, err := dir.New(blobDir)
+	if err != nil {
+		return err
+	}
+	// defer s.Close() - where is this??
 	roots := map[string]int{}
 	missing := 0
 	// TODO(dichro): cache Parents() call results?
 	for ref := range fsck.Missing() {
+		if _, size, err := bs.Fetch(blob.MustParse(ref)); err == nil {
+			log.Fatalf("missing ref %q found with size %d", ref, size)
+		}
 		missing++
 		nodes, err := fsck.Parents(ref)
 		if err != nil {
@@ -167,7 +182,7 @@ func statsBlobs(dbDir string) error {
 	}
 	sort.Strings(camliTypes)
 	for _, t := range camliTypes {
-		fmt.Printf("\t%s: %d\n", t, s.CamliTypes[t])
+		fmt.Printf("\t%q: %d\n", t, s.CamliTypes[t])
 	}
 	return nil
 }

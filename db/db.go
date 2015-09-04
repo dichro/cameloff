@@ -162,6 +162,12 @@ func (d *DB) Parents(ref string) (parents []string, err error) {
 	return
 }
 
+func (d *DB) Close() {
+	if err := d.db.Close(); err != nil {
+		log.Print(err)
+	}
+}
+
 func pack(prefix string, fields ...string) []byte {
 	b := bytes.NewBufferString(prefix)
 	for _, f := range fields {
