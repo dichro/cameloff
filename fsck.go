@@ -14,6 +14,7 @@ import (
 	"camlistore.org/pkg/blobserver/dir"
 	"camlistore.org/pkg/context"
 	"camlistore.org/pkg/index"
+	"camlistore.org/pkg/schema"
 	"github.com/gonuts/commander"
 
 	"github.com/dichro/cameloff/db"
@@ -129,36 +130,49 @@ func missingBlobs(dbDir, blobDir string) error {
 	missing := 0
 	// TODO(dichro): cache Parents() call results?
 	for ref := range fsck.Missing() {
+		if body, size, err := bs.Fetch(blob.MustParse(ref)); err == nil {
+			log.Printf("missing ref %q found with size %d", ref, size)
+			body.Close()
+			continue
+		}
 		fmt.Println(ref)
 		missing++
-		if _, size, err := bs.Fetch(blob.MustParse(ref)); err == nil {
-			log.Fatalf("missing ref %q found with size %d", ref, size)
-		}
 		nodes, err := fsck.Parents(ref)
 		if err != nil {
 			log.Print(err)
 			continue
 		}
-		printHierarchy(fsck, 1, nodes)
+		printHierarchy(fsck, bs, 1, nodes)
 	}
 	fmt.Println("total", missing)
 	return nil
 }
 
-func printHierarchy(fsck *db.DB, depth int, nodes []string) {
+func printHierarchy(fsck *db.DB, bs blob.Fetcher, depth int, nodes []string) {
 	prefix := ""
 	for i := 0; i < depth; i++ {
 		prefix = prefix + "  "
 	}
 	for _, node := range nodes {
+		ref := blob.MustParse(node)
+		camliType := "unknown"
+		if body, _, err := bs.Fetch(ref); err != nil {
+			camliType = fmt.Sprintf("Fetch(): %s", err)
+		} else {
+			if s, ok := parseSchema(ref, body); ok {
+				camliType = s.Type()
+			}
+			body.Close()
+		}
+
 		switch next, err := fsck.Parents(node); {
 		case err != nil:
 			fmt.Printf("%s* %s: %s\n", prefix, node, err)
 		case len(next) == 0:
-			fmt.Printf("%s- %s (%s)\n", prefix, node, "unknown")
+			fmt.Printf("%s- %s (%s)\n", prefix, node, camliType)
 		default:
-			fmt.Printf("%s+ %s (%s)\n", prefix, node, "unknown")
-			printHierarchy(fsck, depth+1, next)
+			fmt.Printf("%s+ %s (%s)\n", prefix, node, camliType)
+			printHierarchy(fsck, bs, depth+1, next)
 		}
 	}
 }
@@ -218,19 +232,13 @@ func scanBlobs(dbDir, blobDir string, restart bool) {
 				stats["corrupt"]++
 				continue
 			}
-			//
-			ref := b.Ref().String()
-
-			//
+			ref := b.Ref()
 			body := b.Open()
-			sn := index.NewBlobSniffer(b.Ref())
-			io.Copy(sn, body)
+			s, ok := parseSchema(ref, body)
 			body.Close()
-			sn.Parse()
-			s, ok := sn.SchemaBlob()
 			if !ok {
 				stats["data"]++
-				if err := fsck.Place(ref, b.Token, "", nil); err != nil {
+				if err := fsck.Place(ref.String(), b.Token, "", nil); err != nil {
 					log.Fatal(err)
 				}
 				continue
@@ -270,11 +278,18 @@ func scanBlobs(dbDir, blobDir string, restart bool) {
 					needs = append(needs, r.String())
 				}
 			}
-			if err := fsck.Place(ref, b.Token, t, needs); err != nil {
+			if err := fsck.Place(ref.String(), b.Token, t, needs); err != nil {
 				log.Fatal(err)
 			}
 		}
 	}
+}
+
+func parseSchema(ref blob.Ref, body io.Reader) (*schema.Blob, bool) {
+	sn := index.NewBlobSniffer(ref)
+	io.Copy(sn, body)
+	sn.Parse()
+	return sn.SchemaBlob()
 }
 
 func streamBlobs(path, resume string) <-chan blobserver.BlobAndToken {
