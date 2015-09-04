@@ -126,7 +126,6 @@ func missingBlobs(dbDir, blobDir string) error {
 		return err
 	}
 	// defer s.Close() - where is this??
-	roots := map[string]int{}
 	missing := 0
 	// TODO(dichro): cache Parents() call results?
 	for ref := range fsck.Missing() {
@@ -140,34 +139,28 @@ func missingBlobs(dbDir, blobDir string) error {
 			log.Print(err)
 			continue
 		}
-		for len(nodes) > 0 {
-			fmt.Printf("\t%s\n", strings.Join(nodes, ", "))
-			n := nodes[0]
-			nodes = nodes[1:]
-			switch p, err := fsck.Parents(n); {
-			case err != nil:
-				log.Print(err)
-			case len(p) == 0:
-				roots[n] += 1
-			default:
-				// TODO(dichro): loop detection
-				//nodes = append(nodes, p...)
-				nodes = p
-			}
-		}
+		printHierarchy(fsck, 1, nodes)
 	}
 	fmt.Println("total", missing)
-	/*
-		refs := make([]string, 0, len(roots))
-		for r := range roots {
-			refs = append(refs, r)
-		}
-		sort.Strings(refs)
-		for _, r := range refs {
-			fmt.Println(r, roots[r])
-		}
-	*/
 	return nil
+}
+
+func printHierarchy(fsck *db.DB, depth int, nodes []string) {
+	prefix := ""
+	for i := 0; i < depth; i++ {
+		prefix = prefix + "  "
+	}
+	for _, node := range nodes {
+		switch next, err := fsck.Parents(node); {
+		case err != nil:
+			fmt.Printf("%s* %s: %s\n", prefix, node, err)
+		case len(next) == 0:
+			fmt.Printf("%s- %s (%s)\n", prefix, node, "unknown")
+		default:
+			fmt.Printf("%s+ %s (%s)\n", prefix, node, "unknown")
+			printHierarchy(fsck, depth+1, next)
+		}
+	}
 }
 
 func statsBlobs(dbDir string) error {
