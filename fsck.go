@@ -142,29 +142,37 @@ func missingBlobs(dbDir, blobDir string) error {
 			log.Print(err)
 			continue
 		}
-		printHierarchy(fsck, bs, 1, nodes)
+		printHierarchy(fsck, bs, 1, "", nodes)
 	}
 	fmt.Println("total", missing)
 	return nil
 }
 
-func printHierarchy(fsck *db.DB, bs blob.Fetcher, depth int, nodes []string) {
+func printHierarchy(fsck *db.DB, bs blob.Fetcher, depth int, suffix string, nodes []string) {
 	prefix := ""
 	for i := 0; i < depth; i++ {
 		prefix = prefix + "  "
 	}
 	for _, node := range nodes {
+		nextSuffix := suffix
 		ref := blob.MustParse(node)
 		camliType := "unknown"
 		if body, _, err := bs.Fetch(ref); err != nil {
 			camliType = fmt.Sprintf("Fetch(): %s", err)
 		} else {
 			if s, ok := parseSchema(ref, body); ok {
+				fileName := s.FileName()
 				switch t := s.Type(); t {
 				case "file":
-					camliType = fmt.Sprintf("%s: %q", t, s.FileName())
+					if len(suffix) > 0 {
+						nextSuffix = fmt.Sprintf("%s -> %s", fileName, nextSuffix)
+					} else {
+						nextSuffix = fileName
+					}
+					camliType = fmt.Sprintf("%s: %q", t, nextSuffix)
 				case "directory":
-					camliType = fmt.Sprintf("%s: %q", t, s.FileName())
+					nextSuffix = fmt.Sprintf("%s/%s", fileName, suffix)
+					camliType = fmt.Sprintf("%s: %q", t, nextSuffix)
 				default:
 					camliType = t
 				}
@@ -179,7 +187,7 @@ func printHierarchy(fsck *db.DB, bs blob.Fetcher, depth int, nodes []string) {
 			fmt.Printf("%s- %s (%s)\n", prefix, node, camliType)
 		default:
 			fmt.Printf("%s+ %s (%s)\n", prefix, node, camliType)
-			printHierarchy(fsck, bs, depth+1, next)
+			printHierarchy(fsck, bs, depth+1, nextSuffix, next)
 		}
 	}
 }
