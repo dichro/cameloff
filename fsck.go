@@ -130,16 +130,18 @@ func missingBlobs(dbDir, blobDir string) error {
 	missing := 0
 	// TODO(dichro): cache Parents() call results?
 	for ref := range fsck.Missing() {
+		fmt.Println(ref)
+		missing++
 		if _, size, err := bs.Fetch(blob.MustParse(ref)); err == nil {
 			log.Fatalf("missing ref %q found with size %d", ref, size)
 		}
-		missing++
 		nodes, err := fsck.Parents(ref)
 		if err != nil {
 			log.Print(err)
 			continue
 		}
 		for len(nodes) > 0 {
+			fmt.Printf("\t%s\n", strings.Join(nodes, ", "))
 			n := nodes[0]
 			nodes = nodes[1:]
 			switch p, err := fsck.Parents(n); {
@@ -149,19 +151,22 @@ func missingBlobs(dbDir, blobDir string) error {
 				roots[n] += 1
 			default:
 				// TODO(dichro): loop detection
-				nodes = append(nodes, p...)
+				//nodes = append(nodes, p...)
+				nodes = p
 			}
 		}
 	}
 	fmt.Println("total", missing)
-	refs := make([]string, 0, len(roots))
-	for r := range roots {
-		refs = append(refs, r)
-	}
-	sort.Strings(refs)
-	for _, r := range refs {
-		fmt.Println(r, roots[r])
-	}
+	/*
+		refs := make([]string, 0, len(roots))
+		for r := range roots {
+			refs = append(refs, r)
+		}
+		sort.Strings(refs)
+		for _, r := range refs {
+			fmt.Println(r, roots[r])
+		}
+	*/
 	return nil
 }
 
