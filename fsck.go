@@ -164,6 +164,9 @@ func printHierarchy(fsck *db.DB, bs blob.Fetcher, depth int, suffix string, node
 				fileName := s.FileName()
 				switch t := s.Type(); t {
 				case "file":
+					// this blob is a "file" that just happens to contain a
+					// camlistore blob in its contents. This happens because I
+					// may have camput my blobs directory once or twice :P
 					if len(suffix) > 0 {
 						nextSuffix = fmt.Sprintf("%s -> %s", fileName, nextSuffix)
 					} else {
