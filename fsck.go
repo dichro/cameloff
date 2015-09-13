@@ -7,6 +7,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"camlistore.org/pkg/blob"
@@ -20,15 +21,30 @@ import (
 	"github.com/dichro/cameloff/db"
 )
 
-type stats map[string]int
+type stats struct {
+	mu     sync.Mutex
+	counts map[string]int
+}
+
+func newStats() *stats {
+	return &stats{counts: make(map[string]int)}
+}
 
 func (s stats) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	parts := []string{}
-	for t, c := range s {
+	for t, c := range s.counts {
 		parts = append(parts, fmt.Sprintf("%s: %d", t, c))
 	}
 	sort.Strings(parts)
 	return strings.Join(parts, ", ")
+}
+
+func (s stats) Add(entry string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.counts[entry]++
 }
 
 type status struct {
@@ -251,7 +267,8 @@ func scanBlobs(dbDir, blobDir string, restart bool) {
 
 	blobCh := streamBlobs(blobDir, last)
 
-	stats := make(stats)
+	stats := newStats()
+	defer fmt.Println("done", stats)
 	for {
 		select {
 		case <-statsCh:
@@ -261,7 +278,7 @@ func scanBlobs(dbDir, blobDir string, restart bool) {
 				return
 			}
 			if !b.ValidContents() {
-				stats["corrupt"]++
+				stats.Add("corrupt")
 				continue
 			}
 			ref := b.Ref()
@@ -269,7 +286,7 @@ func scanBlobs(dbDir, blobDir string, restart bool) {
 			s, ok := parseSchema(ref, body)
 			body.Close()
 			if !ok {
-				stats["data"]++
+				stats.Add("data")
 				if err := fsck.Place(ref.String(), b.Token, "", nil); err != nil {
 					log.Fatal(err)
 				}
@@ -277,7 +294,7 @@ func scanBlobs(dbDir, blobDir string, restart bool) {
 			}
 			needs := indexSchemaBlob(fsck, s)
 			t := s.Type()
-			stats[t]++
+			stats.Add(t)
 			if err := fsck.Place(ref.String(), b.Token, t, needs); err != nil {
 				log.Fatal(err)
 			}
@@ -358,8 +375,8 @@ func rescanBlobs(dbDir, blobDir, camliType string) error {
 	if err != nil {
 		return err
 	}
-	stats := make(stats)
-	defer fmt.Println(time.Now(), stats)
+	stats := newStats()
+	defer fmt.Println("done", stats)
 	statsCh := time.Tick(10 * time.Second)
 	blobCh := fsck.List(camliType)
 	for {
@@ -381,9 +398,9 @@ func rescanBlobs(dbDir, blobDir, camliType string) error {
 				// TODO(dichro): this returns a list of dependencies; should reindex
 				// those too.
 				indexSchemaBlob(fsck, s)
-				stats[s.Type()]++
+				stats.Add(s.Type())
 			} else {
-				stats["error"]++
+				stats.Add("error")
 			}
 			body.Close()
 		}
