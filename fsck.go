@@ -97,12 +97,14 @@ func main() {
 		},
 	}
 
+	var workers int
 	rescan := &commander.Command{
 		UsageLine: "rescan rescans blobs that are already in the fsck index",
 		Run: func(*commander.Command, []string) error {
-			return rescanBlobs(dbDir, blobDir, camliType)
+			return rescanBlobs(dbDir, blobDir, camliType, workers)
 		},
 	}
+	rescan.Flag.IntVar(&workers, "workers", 8, "number of i/o goroutines")
 
 	top := &commander.Command{
 		UsageLine: os.Args[0],
@@ -366,7 +368,7 @@ func streamBlobs(path, resume string) <-chan blobserver.BlobAndToken {
 	return ch
 }
 
-func rescanBlobs(dbDir, blobDir, camliType string) error {
+func rescanBlobs(dbDir, blobDir, camliType string, workers int) error {
 	fsck, err := db.New(dbDir)
 	if err != nil {
 		return err
@@ -386,7 +388,7 @@ func rescanBlobs(dbDir, blobDir, camliType string) error {
 
 	blobCh := fsck.List(camliType)
 	var wg sync.WaitGroup
-	for i := 0; i < 2; i++ {
+	for i := 0; i < workers; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
