@@ -29,11 +29,16 @@ const (
 	parent    = "parent"
 	last      = "last"
 	camliType = "type"
+	mimeType  = "mime"
 
 	// bounds for iterators
 	start = "\x00"
 	limit = "\xff"
 )
+
+func (d *DB) PlaceMIME(ref, mime string) error {
+	return d.db.Put(pack(mimeType, mime, ref), nil, nil)
+}
 
 // Place notes the presence of a blob at a particular location.
 func (d *DB) Place(ref, location, ct string, dependencies []string) (err error) {

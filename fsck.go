@@ -15,6 +15,7 @@ import (
 	"camlistore.org/pkg/blobserver/dir"
 	"camlistore.org/pkg/context"
 	"camlistore.org/pkg/index"
+	"camlistore.org/pkg/magic"
 	"camlistore.org/pkg/schema"
 	"github.com/gonuts/commander"
 
@@ -98,13 +99,13 @@ func main() {
 	}
 
 	var workers int
-	rescan := &commander.Command{
-		UsageLine: "rescan rescans blobs that are already in the fsck index",
+	mimeScan := &commander.Command{
+		UsageLine: "mime scans indexed blobs for mime types",
 		Run: func(*commander.Command, []string) error {
-			return rescanBlobs(dbDir, blobDir, camliType, workers)
+			return mimeScanBlobs(dbDir, blobDir, workers)
 		},
 	}
-	rescan.Flag.IntVar(&workers, "workers", 8, "number of i/o goroutines")
+	mimeScan.Flag.IntVar(&workers, "workers", 8, "number of i/o goroutines")
 
 	top := &commander.Command{
 		UsageLine: os.Args[0],
@@ -113,7 +114,7 @@ func main() {
 			missing,
 			stats,
 			list,
-			rescan,
+			mimeScan,
 		},
 	}
 
@@ -123,12 +124,12 @@ func main() {
 	}
 
 	// add --blob_dir as appropriate
-	for _, cmd := range []*commander.Command{scan, rescan, missing} {
+	for _, cmd := range []*commander.Command{scan, mimeScan, missing} {
 		cmd.Flag.StringVar(&blobDir, "blob_dir", "", "Camlistore blob directory")
 	}
 
 	// add --camliType as appropriate
-	for _, cmd := range []*commander.Command{list, rescan} {
+	for _, cmd := range []*commander.Command{list} {
 		cmd.Flag.StringVar(&camliType, "camliType", "", "restrict to blobs of a specific camliType")
 	}
 
@@ -368,7 +369,7 @@ func streamBlobs(path, resume string) <-chan blobserver.BlobAndToken {
 	return ch
 }
 
-func rescanBlobs(dbDir, blobDir, camliType string, workers int) error {
+func mimeScanBlobs(dbDir, blobDir string, workers int) error {
 	fsck, err := db.New(dbDir)
 	if err != nil {
 		return err
@@ -386,7 +387,7 @@ func rescanBlobs(dbDir, blobDir, camliType string, workers int) error {
 		}
 	}()
 
-	blobCh := fsck.List(camliType)
+	blobCh := fsck.List("file")
 	var wg sync.WaitGroup
 	for i := 0; i < workers; i++ {
 		wg.Add(1)
@@ -398,17 +399,36 @@ func rescanBlobs(dbDir, blobDir, camliType string, workers int) error {
 				if err != nil {
 					// TODO(dichro): delete this from index?
 					log.Printf("%s: previously indexed; now missing", br)
+					stats.Add("missing")
 					continue
 				}
-				if s, ok := parseSchema(br, body); ok {
-					// TODO(dichro): this returns a list of dependencies; should reindex
-					// those too.
-					indexSchemaBlob(fsck, s)
-					stats.Add(s.Type())
-				} else {
-					stats.Add("error")
-				}
+				s, ok := parseSchema(br, body)
 				body.Close()
+				if !ok {
+					log.Printf("%s: previously schema; now unparseable", br)
+					stats.Add("unparseable")
+					continue
+				}
+				file, err := s.NewFileReader(bs)
+				if err != nil {
+					log.Printf("%s: unreadable: %s", br, err)
+					stats.Add("unreadable")
+					continue
+				}
+				mime, _ := magic.MIMETypeFromReader(file)
+				file.Close()
+				if mime != "" {
+					if pos := strings.Index(mime, "; charset="); pos >= 0 {
+						mime = mime[:pos]
+					}
+					if err := fsck.PlaceMIME(ref, mime); err != nil {
+						log.Printf("%s: PlaceMIME(): %s", ref, mime)
+						mime = "error"
+					}
+				} else {
+					mime = "unknown"
+				}
+				stats.Add(mime)
 			}
 		}()
 	}
