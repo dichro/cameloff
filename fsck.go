@@ -72,12 +72,20 @@ func main() {
 		},
 	}
 
+	var camliType string
+
 	list := &commander.Command{
 		UsageLine: "list lists blobs from the index",
+		Run: func(*commander.Command, []string) error {
+			return listBlobs(dbDir, camliType)
+		},
 	}
-	camliType := list.Flag.String("camliType", "", "Type of blob to list")
-	list.Run = func(*commander.Command, []string) error {
-		return listBlobs(dbDir, *camliType)
+
+	rescan := &commander.Command{
+		UsageLine: "rescan rescans blobs that are already in the fsck index",
+		Run: func(*commander.Command, []string) error {
+			return rescanBlobs(dbDir, blobDir, camliType)
+		},
 	}
 
 	top := &commander.Command{
@@ -87,6 +95,7 @@ func main() {
 			missing,
 			stats,
 			list,
+			rescan,
 		},
 	}
 
@@ -96,8 +105,13 @@ func main() {
 	}
 
 	// add --blob_dir as appropriate
-	for _, cmd := range []*commander.Command{scan, missing} {
+	for _, cmd := range []*commander.Command{scan, rescan, missing} {
 		cmd.Flag.StringVar(&blobDir, "blob_dir", "", "Camlistore blob directory")
+	}
+
+	// add --camliType as appropriate
+	for _, cmd := range []*commander.Command{list, rescan} {
+		cmd.Flag.StringVar(&camliType, "camliType", "", "restrict to blobs of a specific camliType")
 	}
 
 	if err := top.Dispatch(os.Args[1:]); err != nil {
@@ -261,46 +275,51 @@ func scanBlobs(dbDir, blobDir string, restart bool) {
 				}
 				continue
 			}
+			needs := indexSchemaBlob(fsck, s)
 			t := s.Type()
 			stats[t]++
-			var needs []string
-			switch t {
-			case "static-set":
-				for _, r := range s.StaticSetMembers() {
-					needs = append(needs, r.String())
-				}
-			case "bytes":
-				fallthrough
-			case "file":
-				for i, bp := range s.ByteParts() {
-					ok := false
-					if r := bp.BlobRef; r.Valid() {
-						needs = append(needs, r.String())
-						ok = true
-					}
-					if r := bp.BytesRef; r.Valid() {
-						needs = append(needs, r.String())
-						ok = true
-					}
-					if !ok {
-						log.Printf("%s (%s): no valid ref in part %d", ref, t, i)
-					}
-				}
-			case "directory":
-				switch r, ok := s.DirectoryEntries(); {
-				case !ok:
-					log.Printf("%s (%s): bad entries", ref, t)
-				case !r.Valid():
-					log.Printf("%s (%s): invalid entries", ref, t)
-				default:
-					needs = append(needs, r.String())
-				}
-			}
 			if err := fsck.Place(ref.String(), b.Token, t, needs); err != nil {
 				log.Fatal(err)
 			}
 		}
 	}
+}
+
+func indexSchemaBlob(fsck *db.DB, s *schema.Blob) (needs []string) {
+	camliType := s.Type()
+	switch camliType {
+	case "static-set":
+		for _, r := range s.StaticSetMembers() {
+			needs = append(needs, r.String())
+		}
+	case "bytes":
+		fallthrough
+	case "file":
+		for i, bp := range s.ByteParts() {
+			ok := false
+			if r := bp.BlobRef; r.Valid() {
+				needs = append(needs, r.String())
+				ok = true
+			}
+			if r := bp.BytesRef; r.Valid() {
+				needs = append(needs, r.String())
+				ok = true
+			}
+			if !ok {
+				log.Printf("%s (%s): no valid ref in part %d", s.BlobRef(), camliType, i)
+			}
+		}
+	case "directory":
+		switch r, ok := s.DirectoryEntries(); {
+		case !ok:
+			log.Printf("%s (%s): bad entries", s.BlobRef(), camliType)
+		case !r.Valid():
+			log.Printf("%s (%s): invalid entries", s.BlobRef(), camliType)
+		default:
+			needs = append(needs, r.String())
+		}
+	}
+	return
 }
 
 func parseSchema(ref blob.Ref, body io.Reader) (*schema.Blob, bool) {
@@ -328,4 +347,46 @@ func streamBlobs(path, resume string) <-chan blobserver.BlobAndToken {
 		}
 	}()
 	return ch
+}
+
+func rescanBlobs(dbDir, blobDir, camliType string) error {
+	fsck, err := db.New(dbDir)
+	if err != nil {
+		return err
+	}
+	bs, err := dir.New(blobDir)
+	if err != nil {
+		return err
+	}
+	stats := make(stats)
+	defer fmt.Println(time.Now(), stats)
+	statsCh := time.Tick(10 * time.Second)
+	blobCh := fsck.List(camliType)
+	for {
+		select {
+		case <-statsCh:
+			fmt.Println(time.Now(), stats)
+		case ref, ok := <-blobCh:
+			if !ok {
+				return nil
+			}
+			br := blob.MustParse(ref)
+			body, _, err := bs.Fetch(br)
+			if err != nil {
+				// TODO(dichro): delete this from index?
+				log.Printf("%s: previously indexed; now missing", br)
+				continue
+			}
+			if s, ok := parseSchema(br, body); ok {
+				// TODO(dichro): this returns a list of dependencies; should reindex
+				// those too.
+				indexSchemaBlob(fsck, s)
+				stats[s.Type()]++
+			} else {
+				stats["error"]++
+			}
+			body.Close()
+		}
+	}
+	return nil
 }
