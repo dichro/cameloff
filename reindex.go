@@ -1,3 +1,5 @@
+// reindex performs offline reindexing of a diskpacked blobstore via
+// BlobStreamer.
 package main
 
 import (
