@@ -375,35 +375,41 @@ func rescanBlobs(dbDir, blobDir, camliType string) error {
 	if err != nil {
 		return err
 	}
+
 	stats := newStats()
 	defer fmt.Println("done", stats)
-	statsCh := time.Tick(10 * time.Second)
-	blobCh := fsck.List(camliType)
-	for {
-		select {
-		case <-statsCh:
+	go func() {
+		for _ = range time.Tick(10 * time.Second) {
 			fmt.Println(time.Now(), stats)
-		case ref, ok := <-blobCh:
-			if !ok {
-				return nil
-			}
-			br := blob.MustParse(ref)
-			body, _, err := bs.Fetch(br)
-			if err != nil {
-				// TODO(dichro): delete this from index?
-				log.Printf("%s: previously indexed; now missing", br)
-				continue
-			}
-			if s, ok := parseSchema(br, body); ok {
-				// TODO(dichro): this returns a list of dependencies; should reindex
-				// those too.
-				indexSchemaBlob(fsck, s)
-				stats.Add(s.Type())
-			} else {
-				stats.Add("error")
-			}
-			body.Close()
 		}
+	}()
+
+	blobCh := fsck.List(camliType)
+	var wg sync.WaitGroup
+	for i := 0; i < 2; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for ref := range blobCh {
+				br := blob.MustParse(ref)
+				body, _, err := bs.Fetch(br)
+				if err != nil {
+					// TODO(dichro): delete this from index?
+					log.Printf("%s: previously indexed; now missing", br)
+					continue
+				}
+				if s, ok := parseSchema(br, body); ok {
+					// TODO(dichro): this returns a list of dependencies; should reindex
+					// those too.
+					indexSchemaBlob(fsck, s)
+					stats.Add(s.Type())
+				} else {
+					stats.Add("error")
+				}
+				body.Close()
+			}
+		}()
 	}
+	wg.Wait()
 	return nil
 }
