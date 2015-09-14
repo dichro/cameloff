@@ -235,17 +235,27 @@ func statsBlobs(dbDir string) error {
 	}
 	s := fsck.Stats()
 	fmt.Println(s)
-	if len(s.CamliTypes) == 0 {
-		return nil
+	if len(s.CamliTypes) != 0 {
+		fmt.Println("camliTypes:")
+		camliTypes := []string{}
+		for t := range s.CamliTypes {
+			camliTypes = append(camliTypes, t)
+		}
+		sort.Strings(camliTypes)
+		for _, t := range camliTypes {
+			fmt.Printf("\t%q: %d\n", t, s.CamliTypes[t])
+		}
 	}
-	fmt.Println("camliTypes:")
-	camliTypes := []string{}
-	for t := range s.CamliTypes {
-		camliTypes = append(camliTypes, t)
-	}
-	sort.Strings(camliTypes)
-	for _, t := range camliTypes {
-		fmt.Printf("\t%q: %d\n", t, s.CamliTypes[t])
+	if len(s.MIMETypes) != 0 {
+		fmt.Println("MIMETypes:")
+		types := []string{}
+		for t := range s.MIMETypes {
+			types = append(types, t)
+		}
+		sort.Strings(types)
+		for _, t := range types {
+			fmt.Printf("\t%q: %d\n", t, s.MIMETypes[t])
+		}
 	}
 	return nil
 }

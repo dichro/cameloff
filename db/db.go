@@ -121,7 +121,7 @@ func (d *DB) streamBlobs(ch chan<- string, refPos int, rng *util.Range) {
 
 type Stats struct {
 	Blobs, Links, Missing, Unknown uint64
-	CamliTypes                     map[string]int64
+	CamliTypes, MIMETypes          map[string]int64
 }
 
 func (s Stats) String() string {
@@ -132,6 +132,7 @@ func (s Stats) String() string {
 // Stats scans the entire index counting various things.
 func (d *DB) Stats() (s Stats) {
 	s.CamliTypes = make(map[string]int64)
+	s.MIMETypes = make(map[string]int64)
 	it := d.db.NewIterator(nil, nil)
 	defer it.Release()
 	for it.Next() {
@@ -146,6 +147,8 @@ func (d *DB) Stats() (s Stats) {
 			s.Missing++
 		case camliType:
 			s.CamliTypes[parts[1]]++
+		case mimeType:
+			s.MIMETypes[parts[1]]++
 		default:
 			s.Unknown++
 		}
