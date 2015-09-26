@@ -109,14 +109,24 @@ func (d *DB) List(ct string) <-chan string {
 	return ch
 }
 
+// ListMIME streams all known files of a particular MIME type.
+func (d *DB) ListMIME(mt string) <-chan string {
+	ch := make(chan string)
+	go d.streamBlobs(ch, 2, &util.Range{
+		Start: pack(mimeType, mt, start),
+		Limit: pack(mimeType, mt, limit),
+	})
+	return ch
+}
+
 func (d *DB) streamBlobs(ch chan<- string, refPos int, rng *util.Range) {
+	defer close(ch)
 	it := d.db.NewIterator(rng, nil)
 	defer it.Release()
 	for it.Next() {
 		parts := unpack(it.Key())
 		ch <- parts[refPos]
 	}
-	close(ch)
 }
 
 type Stats struct {
