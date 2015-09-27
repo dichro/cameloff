@@ -9,6 +9,7 @@ import (
 	"github.com/rwcarlsen/goexif/exif"
 
 	"github.com/dichro/cameloff/db"
+	"github.com/dichro/cameloff/fsck"
 )
 
 func main() {
@@ -17,7 +18,7 @@ func main() {
 	mimeType := flag.String("mime_type", "image/jpeg", "MIME type of files to scan")
 	flag.Parse()
 
-	fsck, err := db.New(*dbDir)
+	fdb, err := db.New(*dbDir)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -26,8 +27,8 @@ func main() {
 		log.Fatal(err)
 	}
 
-	files := db.NewFiles(bs)
-	go files.ReadRefs(fsck.ListMIME(*mimeType))
+	files := fsck.NewFiles(bs)
+	go files.ReadRefs(fdb.ListMIME(*mimeType))
 	go files.LogErrors()
 	for r := range files.Readers {
 		ex, err := exif.Decode(r)
