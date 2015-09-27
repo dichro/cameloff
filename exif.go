@@ -34,16 +34,21 @@ func main() {
 	files := fsck.NewFiles(bs)
 	go files.ReadRefs(fdb.ListMIME(*mimeType))
 	go files.LogErrors()
-	for r := range files.Readers {
-		ex, err := exif.Decode(r)
-		if err != nil {
-			stats.Add("error")
-			continue
+
+	workers := fsck.Parallel{Workers: 32}
+	workers.Go(func() {
+		for r := range files.Readers {
+			ex, err := exif.Decode(r)
+			if err != nil {
+				stats.Add("error")
+				continue
+			}
+			if tag, err := ex.Get(exif.Model); err == nil {
+				stats.Add(tag.String())
+			} else {
+				stats.Add("missing")
+			}
 		}
-		if tag, err := ex.Get(exif.Model); err == nil {
-			stats.Add(tag.String())
-		} else {
-			stats.Add("missing")
-		}
-	}
+	})
+	workers.Wait()
 }
