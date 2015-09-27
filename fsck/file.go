@@ -9,11 +9,16 @@ import (
 	"camlistore.org/pkg/schema"
 )
 
+type File struct {
+	io.Reader
+	Filename string
+}
+
 type Files struct {
 	// Blob source
 	Fetcher blob.Fetcher
 	// File readers
-	Readers chan io.Reader
+	Readers chan File
 	// Channels reporting various errors
 	Missing, Invalid, Unreadable chan string
 }
@@ -21,7 +26,7 @@ type Files struct {
 func NewFiles(fetcher blob.Fetcher) *Files {
 	return &Files{
 		fetcher,
-		make(chan io.Reader),
+		make(chan File),
 		make(chan string),
 		make(chan string),
 		make(chan string),
@@ -47,7 +52,7 @@ func (f Files) ReadRefs(refs <-chan string) {
 			f.Unreadable <- ref
 			continue
 		}
-		f.Readers <- file
+		f.Readers <- File{Reader: file, Filename: s.FileName()}
 	}
 }
 
