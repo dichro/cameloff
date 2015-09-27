@@ -28,7 +28,7 @@ func main() {
 	}
 
 	stats := fsck.NewStats()
-	defer stats.LogEvery(10 * time.Second).Stop()
+	defer stats.LogTopNEvery(10, 10*time.Second).Stop()
 	defer log.Print(stats)
 
 	files := fsck.NewFiles(bs)
