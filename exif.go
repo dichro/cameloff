@@ -2,8 +2,8 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"log"
+	"time"
 
 	"camlistore.org/pkg/blobserver/dir"
 	"github.com/rwcarlsen/goexif/exif"
@@ -27,15 +27,23 @@ func main() {
 		log.Fatal(err)
 	}
 
+	stats := fsck.NewStats()
+	defer stats.LogEvery(10 * time.Second).Stop()
+	defer log.Print(stats)
+
 	files := fsck.NewFiles(bs)
 	go files.ReadRefs(fdb.ListMIME(*mimeType))
 	go files.LogErrors()
 	for r := range files.Readers {
 		ex, err := exif.Decode(r)
 		if err != nil {
-			log.Print(err)
+			stats.Add("error")
 			continue
 		}
-		fmt.Println(ex)
+		if tag, err := ex.Get(exif.Model); err == nil {
+			stats.Add(tag.String())
+		} else {
+			stats.Add("missing")
+		}
 	}
 }
