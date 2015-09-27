@@ -20,33 +20,8 @@ import (
 	"github.com/gonuts/commander"
 
 	"github.com/dichro/cameloff/db"
+	fs "github.com/dichro/cameloff/fsck"
 )
-
-type stats struct {
-	mu     sync.Mutex
-	counts map[string]int
-}
-
-func newStats() *stats {
-	return &stats{counts: make(map[string]int)}
-}
-
-func (s stats) String() string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	parts := []string{}
-	for t, c := range s.counts {
-		parts = append(parts, fmt.Sprintf("%s: %d", t, c))
-	}
-	sort.Strings(parts)
-	return strings.Join(parts, ", ")
-}
-
-func (s stats) Add(entry string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.counts[entry]++
-}
 
 type status struct {
 	location        string
@@ -261,8 +236,6 @@ func statsBlobs(dbDir string) error {
 }
 
 func scanBlobs(dbDir, blobDir string, restart bool) {
-	statsCh := time.Tick(10 * time.Second)
-
 	fsck, err := db.New(dbDir)
 	if err != nil {
 		log.Fatal(err)
@@ -280,37 +253,30 @@ func scanBlobs(dbDir, blobDir string, restart bool) {
 
 	blobCh := streamBlobs(blobDir, last)
 
-	stats := newStats()
-	defer fmt.Println("done", stats)
-	for {
-		select {
-		case <-statsCh:
-			fmt.Println(time.Now(), stats)
-		case b, ok := <-blobCh:
-			if !ok {
-				return
-			}
-			if !b.ValidContents() {
-				stats.Add("corrupt")
-				continue
-			}
-			ref := b.Ref()
-			body := b.Open()
-			s, ok := parseSchema(ref, body)
-			body.Close()
-			if !ok {
-				stats.Add("data")
-				if err := fsck.Place(ref.String(), b.Token, "", nil); err != nil {
-					log.Fatal(err)
-				}
-				continue
-			}
-			needs := indexSchemaBlob(fsck, s)
-			t := s.Type()
-			stats.Add(t)
-			if err := fsck.Place(ref.String(), b.Token, t, needs); err != nil {
+	stats := fs.NewStats()
+	defer stats.LogEvery(10 * time.Second).Stop()
+	defer log.Print(stats)
+	for b := range blobCh {
+		if !b.ValidContents() {
+			stats.Add("corrupt")
+			continue
+		}
+		ref := b.Ref()
+		body := b.Open()
+		s, ok := parseSchema(ref, body)
+		body.Close()
+		if !ok {
+			stats.Add("data")
+			if err := fsck.Place(ref.String(), b.Token, "", nil); err != nil {
 				log.Fatal(err)
 			}
+			continue
+		}
+		needs := indexSchemaBlob(fsck, s)
+		t := s.Type()
+		stats.Add(t)
+		if err := fsck.Place(ref.String(), b.Token, t, needs); err != nil {
+			log.Fatal(err)
 		}
 	}
 }
@@ -389,8 +355,9 @@ func mimeScanBlobs(dbDir, blobDir string, workers int) error {
 		return err
 	}
 
-	stats := newStats()
-	defer fmt.Println("done", stats)
+	stats := fs.NewStats()
+	defer stats.LogEvery(10 * time.Second).Stop()
+	defer log.Print(stats)
 	go func() {
 		for _ = range time.Tick(10 * time.Second) {
 			fmt.Println(time.Now(), stats)
