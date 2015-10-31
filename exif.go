@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"log"
 	"time"
 
@@ -16,6 +17,7 @@ func main() {
 	dbDir := flag.String("db_dir", "", "FSCK state database directory")
 	blobDir := flag.String("blob_dir", "", "Camlistore blob directory")
 	mimeType := flag.String("mime_type", "image/jpeg", "MIME type of files to scan")
+	print := flag.Bool("print", false, "Print ref and camera model")
 	workers := fsck.Parallel{Workers: 32}
 	flag.Var(workers, "workers", "parallel worker goroutines")
 	flag.Parse()
@@ -44,10 +46,14 @@ func main() {
 				stats.Add("error")
 				continue
 			}
-			if tag, err := ex.Get(exif.Model); err == nil {
-				stats.Add(tag.String())
-			} else {
+			tag, err := ex.Get(exif.Model)
+			if err != nil {
 				stats.Add("missing")
+				continue
+			}
+			stats.Add(tag.String())
+			if *print {
+				fmt.Printf("%s %q %q\n", r.Ref, r.Filename, tag)
 			}
 		}
 	})

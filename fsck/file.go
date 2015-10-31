@@ -9,11 +9,13 @@ import (
 	"camlistore.org/pkg/schema"
 )
 
+// File is an opened file from the repo.
 type File struct {
 	io.Reader
-	Filename string
+	Ref, Filename string
 }
 
+// Files provides a stream of open file readers from the repo.
 type Files struct {
 	// Blob source
 	Fetcher blob.Fetcher
@@ -33,8 +35,11 @@ func NewFiles(fetcher blob.Fetcher) *Files {
 	}
 }
 
+// ReadRefs opens all files corresponding to the refs supplied on the
+// provided channel.
 func (f Files) ReadRefs(refs <-chan string) {
 	for ref := range refs {
+		ref := ref
 		br := blob.MustParse(ref)
 		body, _, err := f.Fetcher.Fetch(br)
 		if err != nil {
@@ -52,7 +57,7 @@ func (f Files) ReadRefs(refs <-chan string) {
 			f.Unreadable <- ref
 			continue
 		}
-		f.Readers <- File{Reader: file, Filename: s.FileName()}
+		f.Readers <- File{Reader: file, Ref: ref, Filename: s.FileName()}
 	}
 }
 
@@ -63,6 +68,8 @@ func parseSchema(ref blob.Ref, body io.Reader) (*schema.Blob, bool) {
 	return sn.SchemaBlob()
 }
 
+// LogErrors is a utility routine for dumping all encountered errors
+// to logs.
 func (f Files) LogErrors() {
 	for {
 		select {
