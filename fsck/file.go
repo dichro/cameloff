@@ -11,7 +11,7 @@ import (
 
 // File is an opened file from the repo.
 type File struct {
-	io.Reader
+	io.ReadSeeker
 	Ref, Filename string
 }
 
@@ -57,7 +57,7 @@ func (f Files) ReadRefs(refs <-chan string) {
 			f.Unreadable <- ref
 			continue
 		}
-		f.Readers <- File{Reader: file, Ref: ref, Filename: s.FileName()}
+		f.Readers <- File{ReadSeeker: file, Ref: ref, Filename: s.FileName()}
 	}
 }
 

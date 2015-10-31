@@ -1,8 +1,11 @@
 package main
 
 import (
+	"crypto/sha1"
+	"encoding/hex"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"time"
 
@@ -40,6 +43,7 @@ func main() {
 	go files.LogErrors()
 
 	workers.Go(func() {
+		log.Print("worker start")
 		for r := range files.Readers {
 			ex, err := exif.Decode(r)
 			if err != nil {
@@ -53,9 +57,16 @@ func main() {
 			}
 			stats.Add(tag.String())
 			if *print {
-				fmt.Printf("%s %q %q\n", r.Ref, r.Filename, tag)
+				sum := []byte("read-error")
+				if _, err := r.Seek(0, 0); err == nil {
+					hash := sha1.New()
+					io.Copy(hash, r)
+					sum = hash.Sum(nil)
+				}
+				fmt.Printf("%s %s %q %q\n", r.Ref, hex.EncodeToString(sum), r.Filename, tag)
 			}
 		}
+		log.Print("worker end")
 	})
 	workers.Wait()
 }
