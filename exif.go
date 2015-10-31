@@ -16,6 +16,8 @@ func main() {
 	dbDir := flag.String("db_dir", "", "FSCK state database directory")
 	blobDir := flag.String("blob_dir", "", "Camlistore blob directory")
 	mimeType := flag.String("mime_type", "image/jpeg", "MIME type of files to scan")
+	workers := fsck.Parallel{Workers: 32}
+	flag.Var(workers, "workers", "parallel worker goroutines")
 	flag.Parse()
 
 	fdb, err := db.New(*dbDir)
@@ -35,7 +37,6 @@ func main() {
 	go files.ReadRefs(fdb.ListMIME(*mimeType))
 	go files.LogErrors()
 
-	workers := fsck.Parallel{Workers: 32}
 	workers.Go(func() {
 		for r := range files.Readers {
 			ex, err := exif.Decode(r)

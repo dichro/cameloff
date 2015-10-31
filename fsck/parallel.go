@@ -1,6 +1,11 @@
 package fsck
 
-import "sync"
+import (
+	"errors"
+	"fmt"
+	"strconv"
+	"sync"
+)
 
 type Parallel struct {
 	Workers int
@@ -21,4 +26,16 @@ func (p *Parallel) Go(f func()) {
 
 func (p *Parallel) Wait() {
 	p.wg.Wait()
+}
+
+func (p Parallel) String() string {
+	return fmt.Sprintf("%d", p.Workers)
+}
+
+func (p Parallel) Set(val string) (err error) {
+	p.Workers, err = strconv.Atoi(val)
+	if err == nil && p.Workers < 1 {
+		err = errors.New("value must be >= 1")
+	}
+	return
 }
