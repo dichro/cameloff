@@ -1,6 +1,7 @@
 package main
 
 import (
+	"archive/tar"
 	"bufio"
 	"errors"
 	"fmt"
@@ -96,8 +97,26 @@ func main() {
 				files.Close()
 			}()
 
+			out := tar.NewWriter(os.Stdout)
 			for r := range files.Readers {
-				fmt.Println("reading", r.Blob.FileName())
+				size := r.PartsSize()
+				if err := out.WriteHeader(&tar.Header{
+					Name:     r.FileName(),
+					Mode:     int64(r.FileMode()),
+					Uid:      r.MapUid(),
+					Gid:      r.MapGid(),
+					Size:     size,
+					ModTime:  r.ModTime(),
+					Typeflag: tar.TypeReg,
+				}); err != nil {
+					log.Fatal(err)
+				}
+				switch n, err := io.Copy(out, r); {
+				case err != nil:
+					log.Fatal(err)
+				case n != size:
+					log.Fatalf("wrote %d of %d", n, size)
+				}
 			}
 			return nil
 		},
