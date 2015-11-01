@@ -39,11 +39,13 @@ func main() {
 	defer log.Print(stats)
 
 	files := fsck.NewFiles(bs)
-	go files.ReadRefs(fdb.ListMIME(*mimeType))
+	go func() {
+		files.ReadRefs(fdb.ListMIME(*mimeType))
+		files.Close()
+	}()
 	go files.LogErrors()
 
 	workers.Go(func() {
-		log.Print("worker start")
 		for r := range files.Readers {
 			ex, err := exif.Decode(r)
 			if err != nil {
@@ -57,16 +59,30 @@ func main() {
 			}
 			stats.Add(tag.String())
 			if *print {
-				sum := []byte("read-error")
-				if _, err := r.Seek(0, 0); err == nil {
-					hash := sha1.New()
-					io.Copy(hash, r)
-					sum = hash.Sum(nil)
+				id := "unknown"
+				if tag, err := ex.Get(exif.ImageUniqueID); err == nil {
+					id = tag.String()
+					stats.Add("unique-id-exif")
+				} else if thumb, err := ex.JpegThumbnail(); err == nil {
+					hash := sha1.Sum(thumb)
+					id = hex.EncodeToString(hash[:20])
+					stats.Add("unique-id-thumb")
+				} else if r.PartsSize() < 1e7 {
+					if _, err := r.Seek(0, 0); err == nil {
+						hash := sha1.New()
+						io.Copy(hash, r)
+						id = hex.EncodeToString(hash.Sum(nil))
+						stats.Add("unique-id-sha1")
+					} else {
+						id = "read-error"
+						stats.Add("unique-id-sha1-error")
+					}
+				} else {
+					stats.Add("unique-id-too-big")
 				}
-				fmt.Printf("%s %s %q %q\n", r.Ref, hex.EncodeToString(sum), r.Filename, tag)
+				fmt.Printf("%s %s %q %q\n", r.BlobRef(), id, r.FileName(), tag)
 			}
 		}
-		log.Print("worker end")
 	})
 	workers.Wait()
 }

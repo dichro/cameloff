@@ -12,7 +12,7 @@ import (
 // File is an opened file from the repo.
 type File struct {
 	io.ReadSeeker
-	Ref, Filename string
+	*schema.Blob
 }
 
 // Files provides a stream of open file readers from the repo.
@@ -57,8 +57,12 @@ func (f Files) ReadRefs(refs <-chan string) {
 			f.Unreadable <- ref
 			continue
 		}
-		f.Readers <- File{ReadSeeker: file, Ref: ref, Filename: s.FileName()}
+		f.Readers <- File{ReadSeeker: file, Blob: s}
 	}
+}
+
+func (f Files) Close() {
+	close(f.Readers)
 }
 
 func parseSchema(ref blob.Ref, body io.Reader) (*schema.Blob, bool) {
