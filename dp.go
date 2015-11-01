@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"io"
@@ -11,6 +12,8 @@ import (
 	"camlistore.org/pkg/blobserver"
 	"camlistore.org/pkg/blobserver/dir"
 	"github.com/gonuts/commander"
+
+	"github.com/dichro/cameloff/fsck"
 )
 
 type Flag struct {
@@ -68,10 +71,43 @@ func main() {
 		},
 	}
 
+	tar := &commander.Command{
+		UsageLine: "tar exports files from the blobstore",
+		Run: func(cmd *commander.Command, args []string) error {
+			if bs.BS == nil {
+				return errors.New("require --blob_dir")
+			}
+			files := fsck.NewFiles(bs.BS)
+			go files.LogErrors()
+
+			// read blobrefs from stdin
+			refsCh := make(chan string, 20)
+			go func() {
+				in := bufio.NewScanner(os.Stdin)
+				for in.Scan() {
+					// TODO(dichro): validate ref?
+					refsCh <- in.Text()
+				}
+				close(refsCh)
+			}()
+
+			go func() {
+				files.ReadRefs(refsCh)
+				files.Close()
+			}()
+
+			for r := range files.Readers {
+				fmt.Println("reading", r.Blob.FileName())
+			}
+			return nil
+		},
+	}
+
 	top := &commander.Command{
 		UsageLine: os.Args[0],
 		Subcommands: []*commander.Command{
 			cat,
+			tar,
 		},
 	}
 
