@@ -98,6 +98,8 @@ func main() {
 			}()
 
 			out := tar.NewWriter(os.Stdout)
+			defer out.Flush()
+
 			for r := range files.Readers {
 				size := r.PartsSize()
 				if err := out.WriteHeader(&tar.Header{
