@@ -379,24 +379,15 @@ func mimeScanBlobs(dbDir, blobDir string, workers int) error {
 		go func() {
 			defer wg.Done()
 			for ref := range blobCh {
-				br := blob.MustParse(ref)
-				body, _, err := bs.Fetch(br)
+				s, err := schemaFromBlobRef(bs, ref)
 				if err != nil {
-					// TODO(dichro): delete this from index?
-					log.Printf("%s: previously indexed; now missing", br)
-					stats.Add("missing")
-					continue
-				}
-				s, ok := parseSchema(br, body)
-				body.Close()
-				if !ok {
-					log.Printf("%s: previously schema; now unparseable", br)
-					stats.Add("unparseable")
+					log.Printf("%s: previously indexed; now missing", ref)
+					stats.Add("badschema")
 					continue
 				}
 				file, err := s.NewFileReader(bs)
 				if err != nil {
-					log.Printf("%s: unreadable: %s", br, err)
+					log.Printf("%s: unreadable: %s", ref, err)
 					stats.Add("unreadable")
 					continue
 				}
