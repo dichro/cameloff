@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/syndtr/goleveldb/leveldb"
+	"github.com/syndtr/goleveldb/leveldb/opt"
 	"github.com/syndtr/goleveldb/leveldb/util"
 )
 
@@ -16,6 +17,17 @@ type DB struct {
 
 func New(path string) (*DB, error) {
 	db, err := leveldb.OpenFile(path, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &DB{db: db}, nil
+}
+
+func NewRO(path string) (*DB, error) {
+	db, err := leveldb.OpenFile(path, &opt.Options{
+		ErrorIfMissing: true,
+		ReadOnly:       true,
+	})
 	if err != nil {
 		return nil, err
 	}

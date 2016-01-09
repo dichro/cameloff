@@ -114,7 +114,7 @@ func main() {
 }
 
 func listBlobs(dbDir, camliType string) error {
-	fsck, err := db.New(dbDir) // read-only?
+	fsck, err := db.NewRO(dbDir)
 	if err != nil {
 		return err
 	}
@@ -125,7 +125,7 @@ func listBlobs(dbDir, camliType string) error {
 }
 
 func missingBlobs(dbDir, blobDir string) error {
-	fsck, err := db.New(dbDir) // read-only?
+	fsck, err := db.NewRO(dbDir)
 	if err != nil {
 		return err
 	}
@@ -204,7 +204,7 @@ func printHierarchy(fsck *db.DB, bs blob.Fetcher, depth int, suffix string, node
 }
 
 func statsBlobs(dbDir string) error {
-	fsck, err := db.New(dbDir) // read-only?
+	fsck, err := db.NewRO(dbDir)
 	if err != nil {
 		return err
 	}
@@ -346,7 +346,7 @@ func streamBlobs(path, resume string) <-chan blobserver.BlobAndToken {
 }
 
 func mimeScanBlobs(dbDir, blobDir string, workers int) error {
-	fsck, err := db.New(dbDir)
+	fsck, err := db.NewRO(dbDir)
 	if err != nil {
 		return err
 	}
