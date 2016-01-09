@@ -82,6 +82,13 @@ func main() {
 	}
 	mimeScan.Flag.IntVar(&workers, "workers", 8, "number of i/o goroutines")
 
+	filePath := &commander.Command{
+		UsageLine: "filepath prints paths to file blobs",
+		Run: func(cmd *commander.Command, refs []string) error {
+			return filePath(dbDir, blobDir, refs)
+		},
+	}
+
 	top := &commander.Command{
 		UsageLine: os.Args[0],
 		Subcommands: []*commander.Command{
@@ -90,6 +97,7 @@ func main() {
 			stats,
 			list,
 			mimeScan,
+			filePath,
 		},
 	}
 
@@ -99,7 +107,7 @@ func main() {
 	}
 
 	// add --blob_dir as appropriate
-	for _, cmd := range []*commander.Command{scan, mimeScan, missing} {
+	for _, cmd := range []*commander.Command{scan, mimeScan, missing, filePath} {
 		cmd.Flag.StringVar(&blobDir, "blob_dir", "", "Camlistore blob directory")
 	}
 
@@ -410,5 +418,24 @@ func mimeScanBlobs(dbDir, blobDir string, workers int) error {
 		}()
 	}
 	wg.Wait()
+	return nil
+}
+
+func filePath(dbDir, blobDir string, refs []string) error {
+	fsck, err := db.NewRO(dbDir)
+	if err != nil {
+		return err
+	}
+	defer fsck.Close()
+	for _, r := range refs {
+		ch := make(chan []string, 10)
+		go func() {
+			fsck.StreamAllParentPaths(r, ch)
+			close(ch)
+		}()
+		for path := range ch {
+			fmt.Println(r, path)
+		}
+	}
 	return nil
 }

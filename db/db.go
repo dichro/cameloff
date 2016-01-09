@@ -178,6 +178,7 @@ func (d *DB) Stats() (s Stats) {
 	return
 }
 
+// Parents returns all immediate parents of a blob ref.
 func (d *DB) Parents(ref string) (parents []string, err error) {
 	it := d.db.NewIterator(&util.Range{
 		Start: pack(parent, ref, start),
@@ -190,6 +191,29 @@ func (d *DB) Parents(ref string) (parents []string, err error) {
 	}
 	err = it.Error()
 	return
+}
+
+// StreamAllParentPaths resolves and returns all complete parent paths
+// for a blob ref.
+func (d *DB) StreamAllParentPaths(ref string, ch chan<- []string) error {
+	return d.streamAllParentPaths(nil, ref, ch)
+}
+
+func (d *DB) streamAllParentPaths(path []string, ref string, ch chan<- []string) error {
+	parents, err := d.Parents(ref)
+	if err != nil {
+		return err
+	}
+	if len(parents) == 0 {
+		ch <- path
+		return nil
+	}
+	for _, parent := range parents {
+		if err := d.streamAllParentPaths(append(path, parent), parent, ch); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (d *DB) Close() {
