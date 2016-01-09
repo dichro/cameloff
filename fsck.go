@@ -427,15 +427,58 @@ func filePath(dbDir, blobDir string, refs []string) error {
 		return err
 	}
 	defer fsck.Close()
+	bs, err := dir.New(blobDir)
+	if err != nil {
+		return err
+	}
 	for _, r := range refs {
 		ch := make(chan []string, 10)
 		go func() {
 			fsck.StreamAllParentPaths(r, ch)
 			close(ch)
 		}()
+		// print something if there's no paths
 		for path := range ch {
-			fmt.Println(r, path)
+			pretty := make([]string, 0, len(path))
+			for i := range path {
+				p := path[len(path)-i-1]
+				s, err := schemaFromBlobRef(bs, p)
+				str := fmt.Sprintf("(%s:%s)->", s.Type(), p)
+				if err != nil {
+					return err
+				}
+				switch s.Type() {
+				case "directory":
+					str = s.FileName() + "/"
+				case "file":
+					str = s.FileName() + " "
+				case "static-set":
+					continue
+				case "bytes":
+					continue
+				}
+				pretty = append(pretty, str)
+			}
+			fmt.Println(r, strings.Join(pretty, ""))
 		}
 	}
 	return nil
+}
+
+func schemaFromBlobRef(bs blob.Fetcher, ref string) (*schema.Blob, error) {
+	br, ok := blob.Parse(ref)
+	if !ok {
+		return nil, fmt.Errorf("%q: unparseable blob ref")
+	}
+	body, _, err := bs.Fetch(br)
+	if err != nil {
+		// TODO(dichro): delete this from index?
+		return nil, fmt.Errorf("%s: previously indexed; now missing", br)
+	}
+	s, ok := parseSchema(br, body)
+	body.Close()
+	if !ok {
+		return nil, fmt.Errorf("%s: previously schema; now unparseable", br)
+	}
+	return s, nil
 }
