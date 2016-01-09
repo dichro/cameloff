@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -64,12 +65,10 @@ func main() {
 		},
 	}
 
-	var camliType string
-
 	list := &commander.Command{
 		UsageLine: "list lists blobs from the index",
-		Run: func(*commander.Command, []string) error {
-			return listBlobs(dbDir, camliType)
+		Run: func(cmd *commander.Command, args []string) error {
+			return listBlobs(dbDir, args)
 		},
 	}
 
@@ -111,22 +110,26 @@ func main() {
 		cmd.Flag.StringVar(&blobDir, "blob_dir", "", "Camlistore blob directory")
 	}
 
-	// add --camliType as appropriate
-	for _, cmd := range []*commander.Command{list} {
-		cmd.Flag.StringVar(&camliType, "camliType", "", "restrict to blobs of a specific camliType")
-	}
-
 	if err := top.Dispatch(os.Args[1:]); err != nil {
 		log.Fatal(err)
 	}
 }
 
-func listBlobs(dbDir, camliType string) error {
+func listBlobs(dbDir string, args []string) error {
 	fsck, err := db.NewRO(dbDir)
 	if err != nil {
 		return err
 	}
-	for ref := range fsck.List(camliType) {
+	var ch <-chan string
+	switch args[0] {
+	case "camli":
+		ch = fsck.List(args[1])
+	case "mime":
+		ch = fsck.ListMIME(args[1])
+	default:
+		return errors.New(`unknown index, use "camli" or "mime"`)
+	}
+	for ref := range ch {
 		fmt.Println(ref)
 	}
 	return nil
