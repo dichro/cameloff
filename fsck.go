@@ -432,8 +432,10 @@ func filePath(dbDir, blobDir string, refs []string) error {
 			close(ch)
 		}()
 		// TODO(dichro): print something if there's no paths
+	PATH:
 		for path := range ch {
 			pretty := make([]string, 0, len(path))
+			foundFile := false
 			for i := range path {
 				p := path[len(path)-i-1]
 				s, err := schemaFromBlobRef(bs, p)
@@ -445,7 +447,17 @@ func filePath(dbDir, blobDir string, refs []string) error {
 				case "directory":
 					str = s.FileName() + "/"
 				case "file":
-					str = s.FileName() + " "
+					if foundFile {
+						// we already found a "file" that contains the
+						// target blob. If we're seeing another "file" on
+						// the way up, then that "file" must actually
+						// contain a schema blob that ultimately references
+						// our target blob, which is not what we're looking
+						// for.
+						continue PATH
+					}
+					foundFile = true
+					str = s.FileName()
 				case "static-set":
 					continue
 				case "bytes":
