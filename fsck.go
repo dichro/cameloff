@@ -431,16 +431,16 @@ func filePath(dbDir, blobDir string, refs []string) error {
 			fsck.StreamAllParentPaths(r, ch)
 			close(ch)
 		}()
-		// print something if there's no paths
+		// TODO(dichro): print something if there's no paths
 		for path := range ch {
 			pretty := make([]string, 0, len(path))
 			for i := range path {
 				p := path[len(path)-i-1]
 				s, err := schemaFromBlobRef(bs, p)
-				str := fmt.Sprintf("(%s:%s)->", s.Type(), p)
 				if err != nil {
 					return err
 				}
+				str := fmt.Sprintf("(%s:%s)->", s.Type(), p)
 				switch s.Type() {
 				case "directory":
 					str = s.FileName() + "/"
